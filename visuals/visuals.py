@@ -23,6 +23,8 @@ from sphinx.environment import BuildEnvironment
 from docutils import frontend
 from docutils.parsers.rst import states
 
+import node_utils
+
 
 __version__ = '0.1'
 
@@ -34,8 +36,8 @@ class VisualsClient(object):
     def __init__(self):
         pass
 
-    def geturi(self):
-        return 'http://placehold.it/350x150'
+    def geturi(docname, visualid):
+        return 'http://placehold.it/350x150?text=' + docname + visualid
 
 
 class visual(nodes.General, nodes.Element):
@@ -57,6 +59,8 @@ class Visual(Figure):
     option_spec['caption'] = directives.unchanged
     # option_spec['option'] = directives.describe_option_type
 
+    is_figure = False
+
     def run(self):
         docname, visualid = self.get_visual_id_info()
 
@@ -66,10 +70,9 @@ class Visual(Figure):
         # sphinx.util.nodes.set_source_info(self, node)
 
         caption = self.options.pop('caption', None)
-        caption = self.make_caption_node(caption)
-        nodes.caption(caption) if caption is not None else None
-        caption.source = self.source
-        caption.line = self.line
+        if caption:
+            caption = node_utils.make_caption_for_directive(self, caption)
+            self.is_figure = True
 
         # check child nodes (based on Figure)
         if self.content:
@@ -81,15 +84,13 @@ class Visual(Figure):
                 legend = parsed[legend_index]
                 if legend_index is not None:
                     del parsed[legend_index]
+                    self.is_figure = True
 
             # parsed has the description of the visual
             parsed.rawsource
 
-        if isinstance(caption, nodes.caption) or isinstance(legend, nodes.legend):
-            is_figure = True
-
         client = VisualsClient
-        uri = client.geturi(docname, visualid, content_node)
+        uri = client.geturi(docname, visualid)  # , content_node)
 
         # check for image type
 
@@ -100,7 +101,7 @@ class Visual(Figure):
         except IndexError:
             pass
         self.arguments[0] = uri
-        if is_figure:
+        if self.is_figure:
             figure_node = Figure.run(self)[0]
             for node in (caption, legend):
                 if node:
@@ -133,16 +134,6 @@ class Visual(Figure):
 
         return docname, visualid
 
-    def make_caption_node(directive, caption):
-        parsed = nodes.Element()
-        self.state.nested_parse(ViewList([caption], source=''),
-                                directive.content_offset, parsed)
-        caption_node = nodes.caption(parsed[0].rawsource, '',
-                                     *parsed[0].children)
-        caption_node.source = parsed[0].source
-        caption_node.line = parsed[0].line
-        container_node += caption_node
-        container_node += literal_node
 
 class Legend(Directive):
 
@@ -156,7 +147,6 @@ class Legend(Directive):
         if self.content:
             node = nodes.Element()          # anonymous container for parsing
             self.state.nested_parse(self.content, self.content_offset, node)
-
 
 
 def visit_visual(self, node):
