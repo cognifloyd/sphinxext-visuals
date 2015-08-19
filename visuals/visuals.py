@@ -80,10 +80,19 @@ class Visual(Figure):
         # check child nodes (based on Figure)
         print('\ncontent check')
         if self.content:
-            legend, visual_content = self.separate_legend_from_content(self.content)
+            start_offset = self.content_offset
+            end_offset = self.state_machine.abs_line_offset()
+            # self.state_machine.goto_line(start_offset)
+            legend, visual_content = self.separate_legend_from_content(
+                start_offset=start_offset,
+                end_offset=end_offset,
+                content_block=self.content,
+                state_machine=self.state_machine,
+                state=self.state)
             if legend:
                 self.is_figure = True
 
+        print(legend)
         client = VisualsClient
         uri = client.geturi(docname, visualid)  # , content_node)
 
@@ -137,150 +146,71 @@ class Visual(Figure):
 
         return docname, visualid
 
-    def separate_legend_from_content(self, content):
+    @staticmethod
+    def separate_legend_from_content(start_offset, end_offset, content_block, state_machine, state):
         """
+        :param int start_offset: 0-based line offset of content start
+        :param int end_offset: 0-based line offset of content end
+        :param StringList content_block: The content_block to work with
+        :param states.NestedStateMachine state_machine: The current state_machine
+        :param states.Body state: The current state
+
         I can't just nested_parse(self.content...) because I want
         to support any directive, even if it is not available locally.
-        That bit of rst might just get parsed somewhere else.
-        That means that I have to:
-            regex through to find the start of any legend directives,
-            look at the indent
-            find where it dedents
-            pop off everything between start and dedent and:
-                nested_parse that to generate legend.
-
-
-        I can use StateMachineWS to get current indent.
+        That bit of rst might just get parsed in an external service
         """
+        print(content_block)
 
         legend = None
         visual_content = None
 
-        sm = self.state_machine
-        """:type sm: states.NestedStateMachine"""
-        state = self.state
-        """:type state: states.Body"""
+        # state_machine.goto_line(start_offset)
+        # content_block, content_indent, line_offset, blank_finish = state_machine.get_indented()
+        # assert isinstance(content_block, StringList)
 
-        # self.lineno           # 1-based start line
-        # sm.abs_line_number()  # 1-based end line (the blank line)
-        # sm.abs_line_offset()  # 0-based end line (the blank line)
-        # self.content_offset   # 0-based start of content (after blank line)
-        # self.content          # content lines excluding initial/final blank lines
-        # self.blocktext        # text from ".. visual::" including last blank line
-        # sm.input_offset       # 0-based start of input lines
-
-        # save for later
-        content_start_offset = self.content_offset  # 0-based lineno of content start
-        content_end_offset = sm.abs_line_offset()   # 0-based lineno of content end
-
-        sm.goto_line(content_start_offset)
-        block, indent, line_offset, blank_finish = sm.get_indented()
-        """:type block: StringList"""
-        sm.goto_line(content_start_offset)
+        # state_machine.goto_line(start_offset)
 
         # Find the beginning of the legend block, and process that.
         # Then get the rest of the content, without the legend block.
         directive_pattern = node_utils.make_directive_pattern()
         directives_in_block = []
-        # (lineno, directive_name, match)
-        for line in block:
+
+        # for line in content_block:
+        for source, abs_offset, line in content_block.xitems():
             directive_first_line_match = directive_pattern.match(line)
             if directive_first_line_match:
-                print(type(block))
-                # group 0: the whole line
-                # group 1: directive name
-                # group 2: whitespace after ::
                 directive_name = directive_first_line_match.group(1)
-                directives_in_block.append((line, directive_name, directive_first_line_match))
+                offset_in_block = abs_offset - start_offset
+                directives_in_block.append((offset_in_block, abs_offset, directive_name, directive_first_line_match))
 
         if len(directives_in_block) > 0:
-            for (line, directive_name, match) in directives_in_block:
+            for (offset_in_block, abs_offset, directive_name, match) in directives_in_block:
+                directive_block, directive_indent, blank_finish \
+                    = content_block.get_indented(start=offset_in_block, first_indent=match.end())
 
-                dummy_directive = Directive(directive_name, None, None, None, None, None, None, state, sm)
+                dummy_directive = Directive(directive_name, None, None, None, None, None, None, None, None)
                 # Dummy directive makes reusing state.parse_directive* possible
                 # even if the directive is unknown (ie without using directive.run())
-                dummy_directive.optional_arguments = 1
-                dummy_directive.final_argument_whitespace = True
+                # This is important if the content will be rendered by an external service.
                 dummy_directive.has_content = True
                 dummy_directive.option_spec = None
+                if directive_name != 'legend':
+                    # If it's not legend, then we don't know what it is.
+                    # Turn it into one long argument block without options.
+                    dummy_directive.optional_arguments = 1
+                    dummy_directive.final_argument_whitespace = True
 
-                # directive_has_whitespace = directive_first_line_match.start(2) != directive_first_line_match.end(2)
+                directive_arguments, directive_options, directive_content, directive_content_offset \
+                    = state.parse_directive_block(directive_block, abs_offset, dummy_directive, option_presets={})
 
-                directive_indented, directive_indent, directive_line_offset, directive_blank_finish \
-                    = sm.get_first_known_indented(indent + match.end(), strip_top=0)
-                # print(sm.abs_line_offset())
-                # print(sm.abs_line_number())
-                # print(self.content_offset)
-                # print(indent + directive_first_line_match.end())
-                print(block)
-                print(directive_indented)
-
-                # arguments, options, content, content_offset \
-                #     = state.parse_directive_block(directive_indented,
-                #         line_offset,
-                #         dummy_directive,
-                #         option_presets
-                #     )
-
-        # state.parse_directive_arguments()
-        # state.parse_directive_block()
-        # state.parse_directive_options()
+                if directive_name == 'legend':
+                    legend = nodes.legend(directive_content)
+                    state.nested_parse(directive_content, directive_content_offset, legend)
 
         # restore saved position
-        sm.goto_line(content_end_offset)
-
-        # print(sm.get_text_block())  # not helpful
-        # indented, indent, offset, blank_finish = sm.get_indented()
-        # print(offset)
-        # print(sm.get_first_known_indented(4))
-        # print(sm.get_known_indented(4))
-        # print(sm.line())
-
-        # sm.previous_line(5)  # up 5 lines
-
-        parsed = visual()     # anonymous container for parsing (must be visual to support legend)
-        # unknown_directive_orig = states.Body.unknown_directive
-        # states.Body.unknown_directive = unknown_directive
-        self.state.nested_parse(self.content, self.content_offset, parsed)
-        # states.Body.unknown_directive = unknown_directive_orig
-
-        if len(parsed) > 0:
-            # use the first legend. Ignore everything else.
-            legend = parsed.next_node(nodes.legend)
-
-            # parsed.rawsource
-            # self.block_text (includes .. visual::)
-            # self.content (a list of lines in content portion dedented)
-            # self.content_offset (lineno in file from top)
-            # self.lineno (line in file of .. visual::)
-            # print(parsed)
-
-            # parsed has the description of the visual
-            # parsed.rawsource
+        # state_machine.goto_line(end_offset)
 
         return legend, visual_content
-
-
-def unknown_directive(self, type_name):
-    indented, indent, offset, blank_finish = \
-        self.state_machine.get_first_known_indented(0, strip_indent=False)
-    return [], blank_finish
-
-
-class Legend(Directive):
-
-    has_content = True
-
-    def run(self):
-        if not isinstance(self.state.parent, visual):
-            return [self.state.document.reporter.warning(
-                'Legend Directives can only be used inside Visual Directives',
-                line=self.lineno)]
-        if self.content:
-            legend_node = nodes.legend(self.content)
-            self.state.nested_parse(self.content, self.content_offset, legend_node)
-
-        return [legend_node]
 
 
 def visit_visual(self, node):
@@ -321,6 +251,5 @@ def setup(app):
                  text=(visit_visual, depart_visual))
 
     app.add_directive('visual', Visual)
-    app.add_directive('legend', Legend)
 
     return {'version': __version__, 'parallel_read_safe': True}
