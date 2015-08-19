@@ -12,7 +12,9 @@
 
 from docutils import nodes
 from docutils.parsers.rst import Directive
+from docutils.parsers.rst.states import Inliner
 from docutils.statemachine import ViewList
+import re
 
 
 def make_caption_for_directive(directive, caption):
@@ -35,3 +37,13 @@ def make_caption_for_directive(directive, caption):
     caption_node.source = parsed[0].source
     caption_node.line = parsed[0].line
     return caption_node
+
+def make_directive_pattern():
+    """ Copied from docutils.parsers.rst.states.Body.explicit.constructs[(directive,<here>)] """
+    return re.compile(r"""
+                      \.\.[ ]+          # explicit markup start
+                      (%s)              # directive name
+                      [ ]?              # optional space
+                      ::                # directive delimiter
+                      ([ ]+|$)          # whitespace or end of line
+                      """ % Inliner.simplename, re.VERBOSE | re.UNICODE)
