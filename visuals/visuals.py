@@ -18,7 +18,7 @@ from docutils.parsers.rst.directives.images import Image, Figure
 # TODO: for pending nodes below
 # from docutils.transforms import Transform
 
-from . import node_utils
+from . import utils
 from .client import VisualsClient
 
 __version__ = '0.1'
@@ -58,7 +58,7 @@ class Visual(Figure):
 
         caption = self.options.pop('caption', None)
         if caption:
-            caption = node_utils.make_caption_for_directive(self, caption)
+            caption = utils.make_caption_for_directive(self, caption)
             self.is_figure = True
 
         # check child nodes (based on Figure)
@@ -134,10 +134,10 @@ class Visual(Figure):
 
         # Find the beginning of the legend block, and process that.
         # Then get the rest of the content, without the legend block.
-        directive_pattern = node_utils.make_directive_pattern()
+        directive_pattern = utils.make_directive_pattern()
         directives_in_block = []
         # TODO: for pending nodes below
-        # nondirective_pattern = node_utils.make_nondirective_pattern()
+        # nondirective_pattern = utils.make_nondirective_pattern()
 
         # for line in content_block:
         for source, line_offset, line in content_block.xitems():
@@ -171,17 +171,12 @@ class Visual(Figure):
             directive_block, directive_indent, blank_finish \
                 = content_block.get_indented(start=offset_in_block, first_indent=match.end())
 
-            dummy_directive = Directive(directive_name, None, None, None, None, None, None, None, None)
-            # Dummy directive makes reusing state.parse_directive* possible
-            # even if the directive is unknown (ie without using directive.run())
-            # This is important if the content will be rendered by an external service.
-            dummy_directive.has_content = True
-            dummy_directive.option_spec = None
-            if directive_name != 'legend':
-                # If it's not legend, then we don't know what it is.
-                # Turn it into one long argument block without options.
-                dummy_directive.optional_arguments = 1
-                dummy_directive.final_argument_whitespace = True
+            # Some directives might not be available locally, but will be rendered by external services
+            if directive_name == 'legend':
+                dummy_directive = utils.make_dummy_directive(
+                    directive_name, optional_arguments=0, final_argument_whitespace=False)
+            else:
+                dummy_directive = utils.make_dummy_directive(directive_name)
 
             directive_arguments, directive_options, directive_content, directive_content_offset \
                 = state.parse_directive_block(directive_block, directive_offset, dummy_directive, option_presets={})
