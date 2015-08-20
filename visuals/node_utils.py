@@ -38,6 +38,7 @@ def make_caption_for_directive(directive, caption):
     caption_node.line = parsed[0].line
     return caption_node
 
+
 def make_directive_pattern():
     """ Copied from docutils.parsers.rst.states.Body.explicit.constructs[(directive,<here>)] """
     return re.compile(r"""
@@ -47,3 +48,8 @@ def make_directive_pattern():
                       ::                # directive delimiter
                       ([ ]+|$)          # whitespace or end of line
                       """ % Inliner.simplename, re.VERBOSE | re.UNICODE)
+
+
+# def make_nondirective_pattern():
+#     """"""
+#     return re.compile()
