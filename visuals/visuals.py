@@ -13,10 +13,8 @@
 from __future__ import absolute_import
 
 from docutils import nodes
-from docutils.parsers.rst import directives, Directive
+from docutils.parsers.rst import directives
 from docutils.parsers.rst.directives.images import Image, Figure
-# TODO: for pending nodes below
-# from docutils.transforms import Transform
 
 from . import utils
 from .client import VisualsClient
@@ -126,18 +124,11 @@ class Visual(Figure):
         legend = None
         visual_content = content_block[:].disconnect()
         """content_block (disconnected from content_block) that will have legend removed"""
-        # TODO: for pending nodes below
-        # visual_nodes = nodes.pending(VisualTransform)
-        # """visual_content (minimally) converted into a list of nodes"""
-        # content_wo_directives = None
-        # """content w/o directives"""
 
         # Find the beginning of the legend block, and process that.
         # Then get the rest of the content, without the legend block.
         directive_pattern = utils.make_directive_pattern()
         directives_in_block = []
-        # TODO: for pending nodes below
-        # nondirective_pattern = utils.make_nondirective_pattern()
 
         # for line in content_block:
         for source, line_offset, line in content_block.xitems():
@@ -148,24 +139,11 @@ class Visual(Figure):
                 directive_name = directive_first_line_match.group(1)
                 # name = directive_name
 
-                # TODO: Remove this when we can create the pending nodes below
                 if directive_name != 'legend':
                     # We don't use any other directives yet, so skip.
                     # later, we might need to process them into something else...
                     continue
                 directives_in_block.append((offset_in_block, line_offset, directive_name, directive_first_line_match))
-
-            # TODO: a node tree... But, how do I deal with paragraphs and non-directive content?
-            # visual_nodes += nodes.pending(
-            #     VisualTransform,
-            #     details={
-            #         'type': 'directive',
-            #         'offset_in_block': offset_in_block,
-            #         'line_offset': line_offset,
-            #         'name': name,
-            #         'line_match': line_match
-            #     }
-            # )
 
         for (offset_in_block, directive_offset, directive_name, match) in directives_in_block:
             directive_block, directive_indent, blank_finish \
@@ -193,12 +171,6 @@ class Visual(Figure):
                 # legend_block = content_block[offset_in_block:last_offset]
 
         return legend, visual_content
-
-
-# TODO: For pending nodes above
-# class VisualTransform(Transform):
-#     def apply(self, **kwargs):
-#         pass
 
 
 def visit_visual(self, node):
