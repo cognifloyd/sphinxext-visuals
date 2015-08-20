@@ -15,6 +15,7 @@ from __future__ import absolute_import
 from docutils import nodes
 from docutils.parsers.rst import directives
 from docutils.parsers.rst.directives.images import Image, Figure
+from sphinx.util.nodes import set_source_info
 
 from . import utils
 from .client import VisualsClient
@@ -44,15 +45,8 @@ class Visual(Figure):
     is_figure = False
 
     def run(self):
-        docname, visualid = self.get_visual_id_info()
-
         visual_node = visual()
-
-        # pass the node into (self = the directive) to get node.source, node.line
-        # sphinx.util.nodes.set_source_info(self, node)
-
-        legend = None
-        visual_content = []
+        set_source_info(self, visual_node)
 
         caption = self.options.pop('caption', None)
         if caption:
@@ -64,8 +58,12 @@ class Visual(Figure):
             legend, visual_content = self.separate_legend_from_content()
             if legend:
                 self.is_figure = True
+        else:
+            legend = None
+            visual_content = []
 
         client = VisualsClient
+        docname, visualid = self.get_visual_id_info()
         uri = client.geturi(docname, visualid)  # , content_node)
 
         # check for image type
@@ -73,6 +71,7 @@ class Visual(Figure):
         # Figure/Image expect the URI to be an argument,
         # then they move it to self.options['uri']
         self.arguments[0] = uri
+
         # Figure/Image will choke on Visual content
         content_backup = self.content
         self.content = ''
@@ -88,7 +87,7 @@ class Visual(Figure):
             (image_node,) = Image.run(self)
             visual_node += image_node
 
-        # Restore the content now that Figure/Image are done processing.
+        # Restore the content now that Figure/Image are done processing. Is this needed?
         self.content = content_backup
 
         return [visual_node]
