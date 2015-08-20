@@ -65,7 +65,6 @@ class Visual(Figure):
             if legend:
                 self.is_figure = True
 
-        print(visual_content)
         client = VisualsClient
         uri = client.geturi(docname, visualid)  # , content_node)
 
@@ -91,8 +90,6 @@ class Visual(Figure):
 
         # Restore the content now that Figure/Image are done processing.
         self.content = content_backup
-
-        print(visual_node)
 
         return [visual_node]
 
@@ -121,54 +118,31 @@ class Visual(Figure):
         state = self.state
         """:type state: docutils.parsers.rst.states.Body"""
 
-        legend = None
-        visual_content = content_block[:].disconnect()
-        """content_block (disconnected from content_block) that will have legend removed"""
+        # we only use the first legend, don't overwrite. (limit=1)
+        [(offset_in_block, directive_offset, directive_name, match)] \
+            = utils.list_directives_in_block(content_offset, content_block, type_limit=['legend'], limit=1)
 
-        # Find the beginning of the legend block, and process that.
-        # Then get the rest of the content, without the legend block.
-        directive_pattern = utils.make_directive_pattern()
-        directives_in_block = []
+        legend_directive \
+            = utils.make_dummy_directive(directive_name, optional_arguments=0, final_argument_whitespace=False)
 
-        # for line in content_block:
-        for source, line_offset, line in content_block.xitems():
-            offset_in_block = line_offset - content_offset
-            directive_first_line_match = directive_pattern.match(line)
-            if directive_first_line_match:
-                # line_match = directive_first_line_match
-                directive_name = directive_first_line_match.group(1)
-                # name = directive_name
+        block, indent, blank_finish \
+            = content_block.get_indented(start=offset_in_block, first_indent=match.end())
 
-                if directive_name != 'legend':
-                    # We don't use any other directives yet, so skip.
-                    # later, we might need to process them into something else...
-                    continue
-                directives_in_block.append((offset_in_block, line_offset, directive_name, directive_first_line_match))
+        arguments, options, legend_content, legend_content_offset \
+            = state.parse_directive_block(block, directive_offset, legend_directive, option_presets={})
 
-        for (offset_in_block, directive_offset, directive_name, match) in directives_in_block:
-            directive_block, directive_indent, blank_finish \
-                = content_block.get_indented(start=offset_in_block, first_indent=match.end())
+        legend = nodes.legend(legend_content)
+        state.nested_parse(legend_content, legend_content_offset, legend)
 
-            # Some directives might not be available locally, but will be rendered by external services
-            if directive_name == 'legend':
-                dummy_directive = utils.make_dummy_directive(
-                    directive_name, optional_arguments=0, final_argument_whitespace=False)
-            else:
-                dummy_directive = utils.make_dummy_directive(directive_name)
+        last_offset = legend_content.offset(-1) - content_offset + 1
+        if blank_finish:
+            last_offset += 1
 
-            directive_arguments, directive_options, directive_content, directive_content_offset \
-                = state.parse_directive_block(directive_block, directive_offset, dummy_directive, option_presets={})
-
-            if directive_name == 'legend' and legend is None:  # only use the first legend, don't overwrite.
-                legend = nodes.legend(directive_content)
-                state.nested_parse(directive_content, directive_content_offset, legend)
-
-                last_offset = directive_content.offset(-1) - content_offset + 1
-                if blank_finish:
-                    last_offset += 1
-
-                del visual_content[offset_in_block:last_offset]
-                # legend_block = content_block[offset_in_block:last_offset]
+        visual_content = content_block[:]
+        """copy of content_block that will have legend removed"""
+        visual_content.disconnect()  # disconnect from content_block
+        del visual_content[offset_in_block:last_offset]
+        # legend_block = content_block[offset_in_block:last_offset]
 
         return legend, visual_content
 

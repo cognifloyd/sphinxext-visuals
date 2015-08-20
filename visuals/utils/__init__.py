@@ -81,3 +81,40 @@ def make_dummy_directive(directive_name,
 
     return dummy_directive
 
+
+def list_directives_in_block(content_offset, content_block, type_limit=None, limit=None):
+    """
+    Find all the directives in the given block of content, returning a list of where they start.
+
+    :param int content_offset: Initial offset (0-based lineno) in source (typically self.content_offset)
+    :param docutils.statemachine.StringList content_block: A list of lines in the content block
+    :param list type_limit: a list of allowed directive types/names
+    :param int limit: stop processing directives after this many matches
+    :return: list[(int, int, str, re.__Match)]
+    """
+
+    if type_limit is not None:
+        assert isinstance(type_limit, list)
+    if limit is not None and limit < 1:
+        limit = None
+
+    directive_pattern = make_directive_pattern()
+    directives_in_block = []
+
+    for source, line_offset, line in content_block.xitems():
+        offset_in_block = line_offset - content_offset
+        directive_first_line_match = directive_pattern.match(line)
+        if directive_first_line_match:
+            directive_name = directive_first_line_match.group(1)
+
+            if type_limit and directive_name not in type_limit:
+                continue
+
+            directives_in_block.append(
+                (offset_in_block, line_offset, directive_name, directive_first_line_match)
+            )
+
+        if limit is not None and len(directives_in_block) == limit:
+            break
+
+    return directives_in_block
