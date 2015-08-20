@@ -15,22 +15,13 @@ from __future__ import absolute_import
 from docutils import nodes
 from docutils.parsers.rst import directives, Directive
 from docutils.parsers.rst.directives.images import Image, Figure
+# TODO: for pending nodes below
+# from docutils.transforms import Transform
 
 from . import node_utils
-from docutils.transforms import Transform
+from .client import VisualsClient
 
 __version__ = '0.1'
-
-
-class VisualsClient(object):
-    """
-    Client for the visuals API. A dummy for now.
-    """
-    def __init__(self):
-        pass
-
-    def geturi(docname, visualid):
-        return 'http://placehold.it/350x150?text=' + docname + '.' + '+'.join(visualid.split())
 
 
 class visual(nodes.General, nodes.Element):
@@ -209,9 +200,10 @@ class Visual(Figure):
         return legend, visual_content
 
 
-class VisualTransform(Transform):
-    def apply(self, **kwargs):
-        pass
+# TODO: For pending nodes above
+# class VisualTransform(Transform):
+#     def apply(self, **kwargs):
+#         pass
 
 
 def visit_visual(self, node):
