@@ -12,18 +12,16 @@
 
 from __future__ import absolute_import
 
-import re
 from docutils import nodes
 from docutils.parsers.rst import directives, Directive
 from docutils.parsers.rst.directives.images import Image, Figure
 
 # recording the actual things I'm using in self.state.document.settings.env
-from sphinx.environment import BuildEnvironment
+# from sphinx.environment import BuildEnvironment
 # from sphinx.config import Config
 # from sphinx.application import Sphinx
-from docutils import frontend  # , statemachine
-from docutils.statemachine import StringList
-from docutils.parsers.rst import states
+# from docutils import frontend, statemachine
+# from docutils.parsers.rst import states
 
 from . import node_utils
 
@@ -80,15 +78,7 @@ class Visual(Figure):
         # check child nodes (based on Figure)
         print('\ncontent check')
         if self.content:
-            start_offset = self.content_offset
-            end_offset = self.state_machine.abs_line_offset()
-            # self.state_machine.goto_line(start_offset)
-            legend, visual_content = self.separate_legend_from_content(
-                start_offset=start_offset,
-                end_offset=end_offset,
-                content_block=self.content,
-                state_machine=self.state_machine,
-                state=self.state)
+            legend, visual_content = self.separate_legend_from_content()
             if legend:
                 self.is_figure = True
 
@@ -126,15 +116,16 @@ class Visual(Figure):
     def get_visual_id_info(self):
         # These assertions tell pycharm what everything is to enable autocomplete
         # They also make my implicit dependencies more explicit.
-        assert isinstance(self.state, states.RSTState)                          # docutils.parser.rst.states.Body
-        assert isinstance(self.state.document, nodes.document)                  # docutils
-        assert isinstance(self.state.document.settings, frontend.Values)        # docutils
-        assert isinstance(self.state.document.settings.env, BuildEnvironment)   # sphinx.environment
+        # assert isinstance(self.state, states.RSTState)                          # docutils.parsers.rst.states.Body
+        # assert isinstance(self.state.document, nodes.document)                  # docutils
+        # assert isinstance(self.state.document.settings, frontend.Values)        # docutils
+        # assert isinstance(self.state.document.settings.env, BuildEnvironment)   # sphinx.environment
         # assert isinstance(self.state.document.settings.env.config, Config)      # sphinx.config
         # assert isinstance(self.state.document.settings.env.app, Sphinx)         # sphinx.application
-        assert isinstance(self.state_machine, (states.RSTStateMachine, states.NestedStateMachine))          # docutils
+        # assert isinstance(self.state_machine, (states.RSTStateMachine, states.NestedStateMachine))          # docutils
 
         env = self.state.document.settings.env
+        """:type env: sphinx.environment.BuildEnvironment"""
 
         # srcdir = env.srcdir
         # src should be relative to srcdir
@@ -146,29 +137,21 @@ class Visual(Figure):
 
         return docname, visualid
 
-    @staticmethod
-    def separate_legend_from_content(start_offset, end_offset, content_block, state_machine, state):
+    def separate_legend_from_content(self):
         """
-        :param int start_offset: 0-based line offset of content start
-        :param int end_offset: 0-based line offset of content end
-        :param StringList content_block: The content_block to work with
-        :param states.NestedStateMachine state_machine: The current state_machine
-        :param states.Body state: The current state
-
         I can't just nested_parse(self.content...) because I want
         to support any directive, even if it is not available locally.
         That bit of rst might just get parsed in an external service
         """
-        print(content_block)
+        content_offset = self.content_offset  # This is 0-based
+        """:type content_offset: int"""
+        content_block = self.content
+        """:type content_block: docutils.statemachine.StringList"""
+        state = self.state
+        """:type state: docutils.parsers.rst.states.Body"""
 
         legend = None
         visual_content = None
-
-        # state_machine.goto_line(start_offset)
-        # content_block, content_indent, line_offset, blank_finish = state_machine.get_indented()
-        # assert isinstance(content_block, StringList)
-
-        # state_machine.goto_line(start_offset)
 
         # Find the beginning of the legend block, and process that.
         # Then get the rest of the content, without the legend block.
@@ -176,39 +159,48 @@ class Visual(Figure):
         directives_in_block = []
 
         # for line in content_block:
-        for source, abs_offset, line in content_block.xitems():
+        for source, line_offset, line in content_block.xitems():
             directive_first_line_match = directive_pattern.match(line)
             if directive_first_line_match:
                 directive_name = directive_first_line_match.group(1)
-                offset_in_block = abs_offset - start_offset
-                directives_in_block.append((offset_in_block, abs_offset, directive_name, directive_first_line_match))
+                offset_in_block = line_offset - content_offset
+                directives_in_block.append((offset_in_block, line_offset, directive_name, directive_first_line_match))
 
-        if len(directives_in_block) > 0:
-            for (offset_in_block, abs_offset, directive_name, match) in directives_in_block:
-                directive_block, directive_indent, blank_finish \
-                    = content_block.get_indented(start=offset_in_block, first_indent=match.end())
+        for (offset_in_block, directive_offset, directive_name, match) in directives_in_block:
+            if directive_name != 'legend':
+                # We don't use any other directives yet, so skip.
+                # later, we might need to process them into something else...
+                continue
+            directive_block, directive_indent, blank_finish \
+                = content_block.get_indented(start=offset_in_block, first_indent=match.end())
 
-                dummy_directive = Directive(directive_name, None, None, None, None, None, None, None, None)
-                # Dummy directive makes reusing state.parse_directive* possible
-                # even if the directive is unknown (ie without using directive.run())
-                # This is important if the content will be rendered by an external service.
-                dummy_directive.has_content = True
-                dummy_directive.option_spec = None
-                if directive_name != 'legend':
-                    # If it's not legend, then we don't know what it is.
-                    # Turn it into one long argument block without options.
-                    dummy_directive.optional_arguments = 1
-                    dummy_directive.final_argument_whitespace = True
+            dummy_directive = Directive(directive_name, None, None, None, None, None, None, None, None)
+            # Dummy directive makes reusing state.parse_directive* possible
+            # even if the directive is unknown (ie without using directive.run())
+            # This is important if the content will be rendered by an external service.
+            dummy_directive.has_content = True
+            dummy_directive.option_spec = None
+            if directive_name != 'legend':
+                # If it's not legend, then we don't know what it is.
+                # Turn it into one long argument block without options.
+                dummy_directive.optional_arguments = 1
+                dummy_directive.final_argument_whitespace = True
 
-                directive_arguments, directive_options, directive_content, directive_content_offset \
-                    = state.parse_directive_block(directive_block, abs_offset, dummy_directive, option_presets={})
+            directive_arguments, directive_options, directive_content, directive_content_offset \
+                = state.parse_directive_block(directive_block, directive_offset, dummy_directive, option_presets={})
 
-                if directive_name == 'legend':
-                    legend = nodes.legend(directive_content)
-                    state.nested_parse(directive_content, directive_content_offset, legend)
+            if directive_name == 'legend' and legend is None:  # only use the first legend, don't overwrite.
+                legend = nodes.legend(directive_content)
+                state.nested_parse(directive_content, directive_content_offset, legend)
 
-        # restore saved position
-        # state_machine.goto_line(end_offset)
+                last_offset = directive_content.offset(-1) - content_offset + 1
+                if blank_finish:
+                    last_offset += 1
+
+                visual_content = content_block[:]
+                visual_content.disconnect()
+                del visual_content[offset_in_block:last_offset]
+                # legend_block = content_block[offset_in_block:last_offset]
 
         return legend, visual_content
 
