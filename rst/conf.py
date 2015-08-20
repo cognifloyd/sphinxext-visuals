@@ -34,7 +34,7 @@ sys.path.append(os.path.abspath('..'))
 extensions = [
     'sphinx.ext.intersphinx',
     'sphinx.ext.todo',
-    'visuals.visuals'
+    'visuals.sphinx_ext'
 ]
 
 # Add any paths that contain templates here, relative to this directory.
