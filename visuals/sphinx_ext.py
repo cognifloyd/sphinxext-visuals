@@ -112,8 +112,12 @@ class Visual(Figure):
         """:type state: docutils.parsers.rst.states.Body"""
 
         # we only use the first legend, don't overwrite. (limit=1)
-        [(offset_in_block, directive_offset, directive_name, match)] \
-            = utils.list_directives_in_block(content_offset, content_block, type_limit=['legend'], limit=1)
+        directives_list = utils.list_directives_in_block(content_offset, content_block, type_limit=['legend'], limit=1)
+
+        if not directives_list:  # then there is no legend
+            return None, content_block
+
+        (offset_in_block, directive_offset, directive_name, match) = directives_list[0]
 
         legend_directive \
             = utils.make_dummy_directive(directive_name, optional_arguments=0, final_argument_whitespace=False)

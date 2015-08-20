@@ -18,6 +18,6 @@ class VisualsClient(object):
         pass
 
     def geturi(docname, visualid):
-        return 'http://placehold.it/350x150?text=' + docname + '.' + '+'.join(visualid.split())
+        return 'http://placehold.it/500x100?text=' + docname + '.' + '+'.join(visualid.split())
 
 

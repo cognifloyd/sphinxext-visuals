@@ -56,6 +56,3 @@ This is a visual:
 
       content in directive
 
-   .. legend::
-
-      asdf
