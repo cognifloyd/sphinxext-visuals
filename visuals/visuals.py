@@ -16,13 +16,6 @@ from docutils import nodes
 from docutils.parsers.rst import directives, Directive
 from docutils.parsers.rst.directives.images import Image, Figure
 
-# recording the actual things I'm using in self.state.document.settings.env
-# from sphinx.environment import BuildEnvironment
-# from sphinx.config import Config
-# from sphinx.application import Sphinx
-# from docutils import frontend, statemachine
-# from docutils.parsers.rst import states
-
 from . import node_utils
 
 
@@ -70,19 +63,20 @@ class Visual(Figure):
         # sphinx.util.nodes.set_source_info(self, node)
 
         legend = None
+        visual_content = []
+
         caption = self.options.pop('caption', None)
         if caption:
             caption = node_utils.make_caption_for_directive(self, caption)
             self.is_figure = True
 
         # check child nodes (based on Figure)
-        print('\ncontent check')
         if self.content:
             legend, visual_content = self.separate_legend_from_content()
             if legend:
                 self.is_figure = True
 
-        print(legend)
+        print(visual_content)
         client = VisualsClient
         uri = client.geturi(docname, visualid)  # , content_node)
 
@@ -109,26 +103,14 @@ class Visual(Figure):
         # Restore the content now that Figure/Image are done processing.
         self.content = content_backup
 
-        # print(visual_node)
+        print(visual_node)
 
         return [visual_node]
 
     def get_visual_id_info(self):
-        # These assertions tell pycharm what everything is to enable autocomplete
-        # They also make my implicit dependencies more explicit.
-        # assert isinstance(self.state, states.RSTState)                          # docutils.parsers.rst.states.Body
-        # assert isinstance(self.state.document, nodes.document)                  # docutils
-        # assert isinstance(self.state.document.settings, frontend.Values)        # docutils
-        # assert isinstance(self.state.document.settings.env, BuildEnvironment)   # sphinx.environment
-        # assert isinstance(self.state.document.settings.env.config, Config)      # sphinx.config
-        # assert isinstance(self.state.document.settings.env.app, Sphinx)         # sphinx.application
-        # assert isinstance(self.state_machine, (states.RSTStateMachine, states.NestedStateMachine))          # docutils
-
         env = self.state.document.settings.env
         """:type env: sphinx.environment.BuildEnvironment"""
 
-        # srcdir = env.srcdir
-        # src should be relative to srcdir
         docname = env.docname
 
         visualid = directives.unchanged_required(self.arguments[0])
