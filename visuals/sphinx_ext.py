@@ -15,6 +15,7 @@ from __future__ import absolute_import
 from docutils import nodes
 from docutils.parsers.rst import directives
 from docutils.parsers.rst.directives.images import Image, Figure
+from docutils.statemachine import StringList
 from sphinx.util.nodes import set_source_info
 
 from . import utils
@@ -44,23 +45,16 @@ class Visual(Figure):
 
     is_figure = False
 
+    visual_content = []
+
     def run(self):
         visual_node = visual()
         set_source_info(self, visual_node)
 
-        caption = self.options.pop('caption', None)
-        if caption:
-            caption = utils.make_caption_for_directive(self, caption)
+        caption = self.get_caption()
+        legend, self.visual_content = self.get_legend_and_visual_content()
+        if caption is not None or legend is not None:
             self.is_figure = True
-
-        # check child nodes (based on Figure)
-        if self.content:
-            legend, visual_content = self.separate_legend_from_content()
-            if legend:
-                self.is_figure = True
-        else:
-            legend = None
-            visual_content = []
 
         client = VisualsClient
         docname, visualid = self.get_visual_id_info()
@@ -74,13 +68,13 @@ class Visual(Figure):
 
         # Figure/Image will choke on Visual content
         content_backup = self.content
-        self.content = ''
+        self.content = StringList()
 
         if self.is_figure:
             # The zeroth element is the figure_node
             figure_node = Figure.run(self)[0]
             for node in (caption, legend):
-                if node:
+                if node is not None:
                     figure_node += node
             visual_node += figure_node
         else:
@@ -144,6 +138,21 @@ class Visual(Figure):
         # legend_block = content_block[offset_in_block:last_offset]
 
         return legend, visual_content
+
+    def get_caption(self):
+        caption = self.options.pop('caption', None)
+        if caption is not None:
+            return utils.make_caption_for_directive(self, caption)
+        else:
+            return None
+
+    def get_legend_and_visual_content(self):
+        # check child nodes (based on Figure)
+        if self.content:
+            return self.separate_legend_from_content()
+        else:
+            return None, []
+
 
 
 def visit_visual(self, node):
