@@ -39,6 +39,14 @@ class Visual(Figure):
     That means this has_content, 1 required argument w/ whitespace
     """
 
+    def __init__(self, name, arguments, options, content, lineno,
+                 content_offset, block_text, state, state_machine):
+        super().__init__(name, arguments, options, content, lineno, content_offset, block_text, state, state_machine)
+        self.env = self.state.document.settings.env
+        """:type env: sphinx.environment.BuildEnvironment"""
+        self.app = self.env.app
+        """:type app: sphinx.application.Sphinx"""
+
     allowed_types = oembed_resource_types = ('photo', 'video', 'link', 'rich')
     """ Inspired by oembed.com """
     default_type = 'photo'
@@ -58,14 +66,18 @@ class Visual(Figure):
         set_source_info(self, visual_node)
         utils.set_type_info(self, visual_node)
 
+        visual_node['docname'], visual_node['visualid'] = self.get_visual_id_info()
+        self.options['name'] = visual_node['visualid']
+        self.add_name(visual_node)
+
+        self.emit('visual-node-inited', self, visual_node)
+
         caption = self.get_caption()
         legend, visual_node['content_block'] = self.get_legend_and_visual_content()
         if caption is not None or legend is not None:
             visual_node['is_figure'] = True
 
-        visual_node['docname'], visual_node['visualid'] = self.get_visual_id_info()
-        self.options['name'] = visual_node['visualid']
-        self.add_name(visual_node)
+        self.emit('visual-caption-and-legend-extracted', self, visual_node, caption, legend)
 
         client = VisualsClient()
         visual_node['uri'] = client.geturi(visual_node)
@@ -78,13 +90,17 @@ class Visual(Figure):
         else:
             raise NotImplementedError('Visuals does not support link or rich oembed content yet')
 
+        self.emit('visual-node-generated', self, visual_node)
+
         return [visual_node]
 
     def get_visual_id_info(self):
-        env = self.state.document.settings.env
-        """:type env: sphinx.environment.BuildEnvironment"""
-
-        docname = env.docname
+        docname = self.env.docname
+        """
+        docname is not the same as self.source.
+        source is a absolute path/filename.
+        docname is the path/filename relative to project (without extension)
+        """
 
         visualid = directives.unchanged_required(self.arguments[0])
         # or use this to get an ID-compatible string
@@ -178,6 +194,14 @@ class Visual(Figure):
 
         # Restore the content now that Figure/Image are done processing. Is this needed?
         self.content = content_backup
+
+    def emit(self, event, *args):
+        """
+        Emit a signal so that other extensions can influnce the processing of visual nodes
+        """
+        # self.app is only available when app.update() is running
+        if self.app is not None:
+            self.app.emit(event, *args)
 
 
 def visit_visual(self, node):
