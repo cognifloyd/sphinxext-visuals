@@ -39,14 +39,14 @@ class Visual(Figure):
     That means this has_content, 1 required argument w/ whitespace
     """
 
-    oembed_resource_types = ('photo', 'video', 'link', 'rich')
+    allowed_types = oembed_resource_types = ('photo', 'video', 'link', 'rich')
     """ Inspired by oembed.com """
     default_type = 'photo'
     """override default_type in sub classes with a string from oembed_resource_types"""
 
     def type(argument):
         # Unbound method used in option_spec; Not a staticmethod; See Image.align
-        return directives.choice(argument, Visual.oembed_resource_types)
+        return directives.choice(argument, Visual.allowed_types)
 
     option_spec = Figure.option_spec.copy()
     option_spec['caption'] = directives.unchanged

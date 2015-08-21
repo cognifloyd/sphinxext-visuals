@@ -18,9 +18,25 @@ import re
 
 
 def set_type_info(directive, node):
-    # override directive.default_type in child classes to set a different default type.
-    node['type'] = directive.options['type'] \
-        = directive.options.get('type', directive.default_type)
+    """
+    :param Directive directive: The directive that defines types with allowed_types and default_type
+    :param nodes.Element node: The node to set the type info on
+    :return:
+    """
+
+    if directive.default_type not in directive.allowed_types:
+        # TODO: throw an error or at least a warning
+        pass
+
+    node['allowed_types'] = directive.allowed_types
+
+    node_type = directive.options.get('type', directive.default_type)
+
+    if node_type not in directive.allowed_types:
+        # silently swallow bad user input and use default instead
+        node['type'] = directive.default_type
+    else:
+        node['type'] = node_type
 
 
 def make_caption_for_directive(directive, caption):
