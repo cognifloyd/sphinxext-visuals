@@ -17,6 +17,12 @@ from docutils.statemachine import ViewList
 import re
 
 
+def set_type_info(directive, node):
+    # override directive.default_type in child classes to set a different default type.
+    node['type'] = directive.options['type'] \
+        = directive.options.get('type', directive.default_type)
+
+
 def make_caption_for_directive(directive, caption):
     """
     Creates a caption for the given directive

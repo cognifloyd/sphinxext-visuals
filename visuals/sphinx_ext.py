@@ -39,13 +39,24 @@ class Visual(Figure):
     That means this has_content, 1 required argument w/ whitespace
     """
 
+    oembed_resource_types = ('photo', 'video', 'link', 'rich')
+    """ Inspired by oembed.com """
+    default_type = 'photo'
+    """override default_type in sub classes with a string from oembed_resource_types"""
+
+    def type(argument):
+        # Unbound method used in option_spec; Not a staticmethod; See Image.align
+        return directives.choice(argument, Visual.oembed_resource_types)
+
     option_spec = Figure.option_spec.copy()
     option_spec['caption'] = directives.unchanged
+    option_spec['type'] = type
     # option_spec['option'] = directives.describe_option_type
 
     def run(self):
         visual_node = visual(is_figure=False)
         set_source_info(self, visual_node)
+        utils.set_type_info(self, visual_node)
 
         caption = self.get_caption()
         legend, visual_node['content_block'] = self.get_legend_and_visual_content()
@@ -58,8 +69,14 @@ class Visual(Figure):
 
         client = VisualsClient()
         visual_node['uri'] = client.geturi(visual_node)
+        # the client could modify visual_node['type'] here, right?
 
-        self.run_figure_or_image(visual_node, caption, legend)
+        if visual_node['type'] == 'photo':
+            self.run_figure_or_image(visual_node, caption, legend)
+        elif visual_node['type'] == 'video':
+            raise NotImplementedError('Visuals does not support videos yet')
+        else:
+            raise NotImplementedError('Visuals does not support link or rich oembed content yet')
 
         return [visual_node]
 
