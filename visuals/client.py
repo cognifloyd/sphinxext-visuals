@@ -17,7 +17,10 @@ class VisualsClient(object):
     def __init__(self):
         pass
 
-    def geturi(docname, visualid):
+    def geturi(self, visual_node):
+        docname = visual_node['docname']
+        visualid = visual_node['visualid']
+
         return 'http://placehold.it/500x100?text=' + docname + '.' + '+'.join(visualid.split())
 
 

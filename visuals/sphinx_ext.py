@@ -43,46 +43,23 @@ class Visual(Figure):
     option_spec['caption'] = directives.unchanged
     # option_spec['option'] = directives.describe_option_type
 
-    is_figure = False
-
-    visual_content = []
-
     def run(self):
-        visual_node = visual()
+        visual_node = visual(is_figure=False)
         set_source_info(self, visual_node)
 
         caption = self.get_caption()
-        legend, self.visual_content = self.get_legend_and_visual_content()
+        legend, visual_node['content_block'] = self.get_legend_and_visual_content()
         if caption is not None or legend is not None:
-            self.is_figure = True
+            visual_node['is_figure'] = True
 
-        client = VisualsClient
-        docname, visualid = self.get_visual_id_info()
-        uri = client.geturi(docname, visualid)  # , content_node)
+        visual_node['docname'], visual_node['visualid'] = self.get_visual_id_info()
+        self.options['name'] = visual_node['visualid']
+        self.add_name(visual_node)
 
-        # check for image type
+        client = VisualsClient()
+        visual_node['uri'] = client.geturi(visual_node)
 
-        # Figure/Image expect the URI to be an argument,
-        # then they move it to self.options['uri']
-        self.arguments[0] = uri
-
-        # Figure/Image will choke on Visual content
-        content_backup = self.content
-        self.content = StringList()
-
-        if self.is_figure:
-            # The zeroth element is the figure_node
-            figure_node = Figure.run(self)[0]
-            for node in (caption, legend):
-                if node is not None:
-                    figure_node += node
-            visual_node += figure_node
-        else:
-            (image_node,) = Image.run(self)
-            visual_node += image_node
-
-        # Restore the content now that Figure/Image are done processing. Is this needed?
-        self.content = content_backup
+        self.run_figure_or_image(visual_node, caption, legend)
 
         return [visual_node]
 
@@ -157,6 +134,33 @@ class Visual(Figure):
         else:
             return None, []
 
+    def run_figure_or_image(self, visual_node, caption_node, legend_node):
+        """
+        use Figure.run() or Image.run() to fill out this node
+
+        :param visual visual_node: The node to work with.
+        """
+        # Figure/Image expect the URI to be an argument,
+        # then they move it to self.options['uri']
+        self.arguments[0] = visual_node['uri']
+
+        # Figure/Image will choke on Visual content
+        content_backup = self.content
+        self.content = StringList()
+
+        if visual_node['is_figure']:
+            # The zeroth element is the figure_node
+            figure_node = Figure.run(self)[0]
+            for node in (caption_node, legend_node):
+                if node is not None:
+                    figure_node += node
+            visual_node += figure_node
+        else:
+            (image_node,) = Image.run(self)
+            visual_node += image_node
+
+        # Restore the content now that Figure/Image are done processing. Is this needed?
+        self.content = content_backup
 
 
 def visit_visual(self, node):
