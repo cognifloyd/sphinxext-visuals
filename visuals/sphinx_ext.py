@@ -79,10 +79,6 @@ class Visual(Figure):
 
         self.emit('visual-caption-and-legend-extracted', self, visual_node, caption, legend)
 
-        client = VisualsClient()
-        visual_node['uri'] = client.geturi(visual_node)
-        # the client could modify visual_node['type'] here, right?
-
         if visual_node['type'] == 'photo':
             self.run_figure_or_image(visual_node, caption, legend)
         elif visual_node['type'] == 'video':
@@ -107,6 +103,20 @@ class Visual(Figure):
         # name = directives.class_option(self.arguments[0])
 
         return docname, visualid
+
+    def get_caption(self):
+        caption = self.options.pop('caption', None)
+        if caption is not None:
+            return utils.make_caption_for_directive(self, caption)
+        else:
+            return None
+
+    def get_legend_and_visual_content(self):
+        # check child nodes (based on Figure)
+        if self.content:
+            return self.separate_legend_from_content()
+        else:
+            return None, []
 
     def separate_legend_from_content(self):
         """
@@ -152,20 +162,6 @@ class Visual(Figure):
         # legend_block = content_block[offset_in_block:last_offset]
 
         return legend, visual_content
-
-    def get_caption(self):
-        caption = self.options.pop('caption', None)
-        if caption is not None:
-            return utils.make_caption_for_directive(self, caption)
-        else:
-            return None
-
-    def get_legend_and_visual_content(self):
-        # check child nodes (based on Figure)
-        if self.content:
-            return self.separate_legend_from_content()
-        else:
-            return None, []
 
     def run_figure_or_image(self, visual_node, caption_node, legend_node):
         """
@@ -226,6 +222,10 @@ def visit_visual(self, node):
     raise nodes.SkipNode
     This might be especially helpful in text writers
     """
+    # client = VisualsClient()
+    # node['uri'] = client.geturi(node)
+    # the client could modify node['type'] here, right?
+
     pass
 
 
@@ -235,12 +235,17 @@ def depart_visual(self, node):
 
 
 def setup(app):
-    """ sphinx setup """
+    """ sphinx setup that runs before builder is loaded
+    :param sphinx.application.Sphinx app: Sphinx Application
+    """
     app.add_node(visual,
                  html=(visit_visual, depart_visual),
                  latex=(visit_visual, depart_visual),
                  text=(visit_visual, depart_visual))
 
     app.add_directive('visual', Visual)
+    app.add_event('visual-node-inited')
+    app.add_event('visual-caption-and-legend-extracted')
+    app.add_event('visual-node-generated')
 
     return {'version': __version__, 'parallel_read_safe': True}
