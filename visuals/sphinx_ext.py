@@ -16,6 +16,7 @@ from docutils import nodes
 from docutils.parsers.rst import directives
 from docutils.parsers.rst.directives.images import Image, Figure
 from docutils.statemachine import StringList
+from sphinx.util import FilenameUniqDict
 from sphinx.util.nodes import set_source_info
 
 from . import utils
@@ -80,7 +81,14 @@ class Visual(Figure):
         self.emit('visual-caption-and-legend-extracted', self, visual_node, caption, legend)
 
         if visual_node['type'] == 'photo':
-            self.run_figure_or_image(visual_node, caption, legend)
+            uri = self.get_temp_image_uri()
+            self.run_figure_or_image_with_uri(uri, visual_node, caption, legend)
+            # Replacing image node is not a good option, but we could manipulate uri.
+            # for image_node in visual_node.traverse(condition=nodes.image):
+            #     image_node['uri'] = something
+
+            # By default, assume it doesn't need a placeholder. Later processing can change this.
+            visual_node['placeholder'] == False;
         elif visual_node['type'] == 'video':
             raise NotImplementedError('Visuals does not support videos yet')
         else:
@@ -163,15 +171,30 @@ class Visual(Figure):
 
         return legend, visual_content
 
-    def run_figure_or_image(self, visual_node, caption_node, legend_node):
+    def get_temp_image_uri(self):
+        return self.app.config.visuals_local_temp_image
+
+    def run_figure_or_image_with_uri(self, uri, visual_node, caption_node, legend_node):
         """
-        use Figure.run() or Image.run() to fill out this node
+        use Figure.run() or Image.run() to fill out these attributes:
+            general image attributes: alt, height, width,
+            scale (scale for the image - this may require additional processing),
+            align (horizontal and vertical alignment),
+            name (an [html] name for the node),
+            target (node or URI that this image should link to),
+            class (any additional [html] classes),
+            figwidth (figure specific width),
+            figclass (figure specific class)
+
+        Note: If figwidth=='image', PIL will try to open the image.
+            PIL will only open the image if it's local, and can be found.
 
         :param visual visual_node: The node to work with.
         """
         # Figure/Image expect the URI to be an argument,
         # then they move it to self.options['uri']
-        self.arguments[0] = visual_node['uri']
+        argument0_backup = self.arguments[0]
+        self.arguments[0] = uri
 
         # Figure/Image will choke on Visual content
         content_backup = self.content
@@ -188,16 +211,77 @@ class Visual(Figure):
             (image_node,) = Image.run(self)
             visual_node += image_node
 
-        # Restore the content now that Figure/Image are done processing. Is this needed?
+        # Restore the content/arg now that Figure/Image are done processing.
+        #   Is this needed?
         self.content = content_backup
+        self.arguments[0] = argument0_backup
 
     def emit(self, event, *args):
         """
-        Emit a signal so that other extensions can influnce the processing of visual nodes
+        Emit a signal so that other extensions can influence the processing of visual nodes
         """
         # self.app is only available when app.update() is running
         if self.app is not None:
             self.app.emit(event, *args)
+
+
+def builder_init_for_visuals(app):
+    """
+    app.builder.images = {}
+        "images that need to be copied over (source -> dest)"
+        Or, in other words, the image must exist in the source files.
+        That doesn't make sense for visuals, because images are externally sourced.
+
+    app.env.images = FilenameUniqDict()
+        "map absolute path -> (docname, unique filename)"
+
+    Instead, visuals will add its own map of images.
+
+    :param sphinx.application.Sphinx app: Sphinx Application
+    """
+
+    # builder = app.builder
+    # """:type builder: sphinx.builders.Builder"""
+
+    # builder.images[candidate] = app.config.visuals_local_temp_image
+    # app.env.images.add_file(docname, imgpath)
+
+    # builder.visuals = {}
+    app.env.visuals = FilenameUniqDict()
+
+
+def process_visuals(app, doctree):
+    """
+    This should send the request to generate the images
+    storing status/URI if known
+
+    :param sphinx.application.Sphinx app: Sphinx Application
+    :param nodes.document doctree: The doctree of all docs in the project
+    :return:
+    """
+    env = app.builder.env
+    """:type env: sphinx.environment.BuildEnvironment"""
+
+    if not hasattr(env, 'visuals'):
+        env.visuals = FilenameUniqDict()
+    for node in doctree.traverse(visual):
+        env.visuals.add_file(env.docname, node['visualid'])
+
+
+def resolve_visuals(app, doctree, docname):
+    """
+    This should recheck for any visuals that need to be rendered
+    For those, it sends the full visual content (if needed)
+    and marks the visual as a placeholder
+
+    :param sphinx.application.Sphinx app: Sphinx Application
+    :param nodes.document doctree: The doctree of all docs in the project
+    :param str docname: the path/filename relative to project (without extension)
+    :return:
+    """
+    for node in doctree.traverse(visual):
+        visual['placeholder'] = True
+    pass
 
 
 def visit_visual(self, node):
@@ -226,6 +310,9 @@ def visit_visual(self, node):
     # node['uri'] = client.geturi(node)
     # the client could modify node['type'] here, right?
 
+    if node['placeholder']:
+        for image in node.traverse(nodes.image):
+            image['uri'] = placeholderuri
     pass
 
 
@@ -238,6 +325,13 @@ def setup(app):
     """ sphinx setup that runs before builder is loaded
     :param sphinx.application.Sphinx app: Sphinx Application
     """
+    # Phase 0: Initialization
+    #   sphinx init
+    app.connect('builder-inited', builder_init_for_visuals)
+    app.add_config_value('visuals_local_temp_image', 'http://example.com/placeholder-uri', 'env')
+
+    # Phase 1: Reading
+    #   docutils parsing (and writer visitors in Phase 4)
     app.add_node(visual,
                  html=(visit_visual, depart_visual),
                  latex=(visit_visual, depart_visual),
@@ -247,5 +341,20 @@ def setup(app):
     app.add_event('visual-node-inited')
     app.add_event('visual-caption-and-legend-extracted')
     app.add_event('visual-node-generated')
+
+    # Phase 1: Reading
+    #   docutils transforms
+    # app.add_transform(VisualsTransform)
+
+    # Phase 1: Reading
+    #   sphinx post-processing
+    app.connect('doctree-read', process_visuals)
+
+    # Phase 3: Resolving
+    #   sphinx final stage before writing
+    app.connect('doctree-resolved', resolve_visuals)
+
+    # Phase 4: Writing
+    #   docutils writer visitors: see docutils parsing section.
 
     return {'version': __version__, 'parallel_read_safe': True}
