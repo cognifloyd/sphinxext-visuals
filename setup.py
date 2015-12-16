@@ -30,7 +30,7 @@ setup(
         'Operating System :: OS Independent',
         'Programming Language :: Python',
         'Framework :: Sphinx :: Extension',
-        #'Framework :: Sphinx :: Theme',
+        # 'Framework :: Sphinx :: Theme',
         'Topic :: Documentation',
         'Topic :: Utilities',
     ],
@@ -39,4 +39,5 @@ setup(
     include_package_data=True,
     install_requires=requires,
     namespace_packages=['visuals'],
+    requires=['docutils', 'sphinx']
 )
