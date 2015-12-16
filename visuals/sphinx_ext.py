@@ -20,6 +20,7 @@ from sphinx.util import FilenameUniqDict
 from sphinx.util.nodes import set_source_info
 
 from . import utils
+from utils.assets import AssetsDict
 from .client import VisualsClient
 
 __version__ = '0.1'
@@ -247,7 +248,13 @@ def builder_init_for_visuals(app):
     # app.env.images.add_file(docname, imgpath)
 
     # builder.visuals = {}
-    app.env.visuals = FilenameUniqDict()
+    # app.env.visuals = FilenameUniqDict()
+
+    app.env.assets = AssetsDict()
+    # {assetid: {AssetLocationTuple: status}}
+    # app.env.assets_status = {}  # asset generation status (use placeholder if not done)
+    # {assetid: {AssetLocationTuple: uri}}
+    # app.env.assets_uris = {}  # the final uri or oembed block with info for builder
 
 
 def process_visuals(app, doctree):
