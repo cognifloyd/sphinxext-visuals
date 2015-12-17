@@ -14,6 +14,7 @@ from __future__ import absolute_import
 from docutils import nodes
 
 
+# noinspection PyPep8Naming
 class visual(nodes.General, nodes.Element):
     """ A Visual Node """
 

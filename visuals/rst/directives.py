@@ -17,7 +17,7 @@ from docutils.parsers.rst.directives.images import Figure, Image
 from docutils.statemachine import StringList
 from sphinx.util.nodes import set_source_info
 
-import utils
+import utils.rst
 from rst.nodes import visual
 
 
@@ -44,6 +44,7 @@ class Visual(Figure):
     default_type = 'photo'
     """override default_type in sub classes with a string from oembed_resource_types"""
 
+    # noinspection PyMethodParameters
     def type(argument):
         # Unbound method used in option_spec; Not a staticmethod; See Image.align
         return directives.choice(argument, Visual.allowed_types)
@@ -56,7 +57,7 @@ class Visual(Figure):
     def run(self):
         visual_node = visual(is_figure=False)
         set_source_info(self, visual_node)
-        utils.set_type_info(self, visual_node)
+        utils.rst.set_type_info(self, visual_node)
 
         visual_node['docname'], visual_node['visualid'] = self.get_visual_id_info()
         self.options['name'] = visual_node['visualid']
@@ -79,7 +80,7 @@ class Visual(Figure):
             #     image_node['uri'] = something
 
             # By default, assume it doesn't need a placeholder. Later processing can change this.
-            visual_node['placeholder'] == False;
+            visual_node['placeholder'] = False
         elif visual_node['type'] == 'video':
             raise NotImplementedError('Visuals does not support videos yet')
         else:
@@ -106,7 +107,7 @@ class Visual(Figure):
     def get_caption(self):
         caption = self.options.pop('caption', None)
         if caption is not None:
-            return utils.make_caption_for_directive(self, caption)
+            return utils.rst.make_caption_for_directive(self, caption)
         else:
             return None
 
@@ -131,7 +132,8 @@ class Visual(Figure):
         """:type state: docutils.parsers.rst.states.Body"""
 
         # we only use the first legend, don't overwrite. (limit=1)
-        directives_list = utils.list_directives_in_block(content_offset, content_block, type_limit=['legend'], limit=1)
+        directives_list = utils.rst.list_directives_in_block(content_offset, content_block, type_limit=['legend'],
+                                                             limit=1)
 
         if not directives_list:  # then there is no legend
             return None, content_block
@@ -139,7 +141,7 @@ class Visual(Figure):
         (offset_in_block, directive_offset, directive_name, match) = directives_list[0]
 
         legend_directive \
-            = utils.make_dummy_directive(directive_name, optional_arguments=0, final_argument_whitespace=False)
+            = utils.rst.make_dummy_directive(directive_name, optional_arguments=0, final_argument_whitespace=False)
 
         block, indent, blank_finish \
             = content_block.get_indented(start=offset_in_block, first_indent=match.end())
@@ -180,7 +182,10 @@ class Visual(Figure):
         Note: If figwidth=='image', PIL will try to open the image.
             PIL will only open the image if it's local, and can be found.
 
+        :param string uri:
         :param visual visual_node: The node to work with.
+        :param nodes.caption caption_node:
+        :param nodes.legend legend_node:
         """
         # Figure/Image expect the URI to be an argument,
         # then they move it to self.options['uri']
@@ -210,6 +215,7 @@ class Visual(Figure):
     def emit(self, event, *args):
         """
         Emit a signal so that other extensions can influence the processing of visual nodes
+        :param string event: represents an event registered with Sphinx
         """
         # self.app is only available when app.update() is running
         if self.app is not None:

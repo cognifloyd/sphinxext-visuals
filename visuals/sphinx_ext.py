@@ -75,6 +75,7 @@ def assets_add_visual(app, visual_node):
     docname = visual_node['docname']
     asset_id = visual_node['visualid']
     # TODO: Options filtering is done in AssetOptionsDict, but maybe it should be here
+    # noinspection PyUnresolvedReferences
     options = visual_node.options
     asset_type = visual_node['type']
     is_ref = visual_node.is_ref()
@@ -119,7 +120,6 @@ def resolve_visuals(app, doctree, docname):
     :param sphinx.application.Sphinx app: Sphinx Application
     :param nodes.document doctree: The doctree of all docs in the project
     :param str docname: the path/filename relative to project (without extension)
-    :return:
     """
     for node in doctree.traverse(visual):
         visual['placeholder'] = True
@@ -147,6 +147,9 @@ def visit_visual(self, node):
     If I need to prevent visit_/depart_ on all children:
     raise nodes.SkipNode
     This might be especially helpful in text writers
+
+    :param nodes.NodeVisitor self:
+    :param visual node:
     """
     # client = VisualsClient()
     # node['uri'] = client.geturi(node)
@@ -154,12 +157,16 @@ def visit_visual(self, node):
 
     if node['placeholder']:
         for image in node.traverse(nodes.image):
-            image['uri'] = placeholderuri
+            image['uri'] = 'placeholder uri'
     pass
 
 
 def depart_visual(self, node):
-    # See visit_visual
+    """
+    See visit_visual
+    :param nodes.NodeVisitor self:
+    :param visual node:
+    """
     pass
 
 

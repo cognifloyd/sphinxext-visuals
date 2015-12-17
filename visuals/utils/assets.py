@@ -17,10 +17,10 @@ from collections import namedtuple
 
 class AssetsDict(dict):
     """
-    A dictionary of AssetTuples indexed by assetid
+    A dictionary of AssetTuples indexed by asset_id
 
     Parts of the AssetsDict:
-        {assetid:
+        {asset_id:
             AssetTuple(
                 type,
                 location=AssetLocationTuple(docname, instance),
@@ -45,6 +45,7 @@ class AssetsDict(dict):
             instances.append(asset_options)
             if not is_ref and self[asset_id].location is None:
                 location = AssetLocationTuple(docname, instance)
+                # noinspection PyProtectedMember
                 self[asset_id] = self[asset_id]._replace(type=asset_type, location=location)
             return
 
@@ -57,16 +58,27 @@ class AssetsDict(dict):
         return
 
     def purge_doc(self, docname):
-        for asset_id, (asset_type, (defdoc, instance), instances) in list(self.items()):
+        """
+        :param list docname: Exclude all assets related to this docname
+        """
+        for asset_id, (asset_type, (definition_docname, definition_index), instances) in list(self.items()):
             if docname in instances:
                 del instances[docname]
-            if defdoc == docname:
+            if definition_docname == docname:
                 if not instances:
                     del self[asset_id]
                 else:  # the doc that defined this was purged, but something is still using it.
+                    # noinspection PyProtectedMember
                     self[asset_id] = self[asset_id]._replace(type=None, location=None)
 
     def merge_other(self, docnames, other):
+        """
+        For use during the env-merge-info sphinx event
+
+        :param list docnames: Only include asset instances in these docnames
+        :param AssetsDict other: the AssetsDict that should merge into this one
+        :return:
+        """
         for asset_id, (asset_type, location, instances) in list(other.items()):
             if location and asset_id in self and self[asset_id].location:
                 assert self[asset_id].location == location
@@ -85,6 +97,7 @@ class AssetsDict(dict):
             (asset_id, AssetLocationTuple(docname, instance_index))
 
         :param list docnames: Only include asset instances in these docnames
+        :return list: list of all asset instances
         """
         instance_list = []
         for asset_id, (asset_type, location, instances) in list(self.items()):
