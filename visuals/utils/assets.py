@@ -12,7 +12,7 @@
 
 from __future__ import absolute_import
 
-from collections import namedtuple, UserDict
+from collections import namedtuple
 
 
 class AssetsDict(dict):
@@ -75,6 +75,26 @@ class AssetsDict(dict):
                 for options in instances[doc]:
                     self.add_asset(doc, asset_id, options, asset_type)
 
+    def list_instances(self, docnames=None):
+        """
+        This returns a list of either all or a filtered set of asset instances.
+        If docnames is provided, only the docnames in that list will be included.
+        Otherwise, all instances of all assets will be included.
+
+        The list contains tuples of the form:
+            (asset_id, AssetLocationTuple(docname, instance_index))
+
+        :param list docnames: Only include asset instances in these docnames
+        """
+        instance_list = []
+        for asset_id, (asset_type, location, instances) in list(self.items()):
+            for docname in list(instances.keys()):
+                if docnames is not None and docname not in docnames:
+                    continue
+                for index in range(len(instances[docname])):
+                    instance_list.append((asset_id, AssetLocationTuple(docname, index)))
+        return instance_list
+
 
 AssetTuple = namedtuple('AssetTuple',
                         ['type',      # The asset type (generally, an oembed type)
@@ -120,32 +140,15 @@ class AssetOptionsDict(dict):
         super().__init__(options)
 
 
-class AssetsMetadataDict(UserDict):
+class AssetsMetadataDict(dict):
     """
     An dictionary that tracks metadata about each asset instance in an AssetsDict.
 
     This initializes as an empty dict.
     Before using, pass your AssetsDict into populate() which also runs clear().
     """
-    def __init__(self):
-        self._locked = False
-        super().__init__()
-
     def populate(self, assets):
         self.clear()
-        for asset_id, (asset_type, location, instances) in list(assets.items()):
-            for docname in list(instances.keys()):
-                for index in range(len(instances[docname])):
-                    # noinspection PyTypeChecker
-                    self[(asset_id, AssetLocationTuple(docname, index))] = None
-        self._locked = True
-
-    def clear(self):
-        self._locked = False
-        super().clear()
-
-    def __setitem__(self, key, value):
-        if key in self or self._locked is False:
-            self.data[key] = value
-        else:
-            error
+        instances_list = assets.list_instances()
+        for instance in instances_list:
+            self[instance] = None
