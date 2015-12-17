@@ -37,18 +37,18 @@ class AssetsDict(dict):
 
     Some logic based on sphinx.util.FilenameUniqDict
     """
-    def add_asset(self, docname, asset_id, options, asset_type=None):
+    def add_asset(self, docname, asset_id, options, asset_type, is_ref=False):
         asset_options = AssetOptionsDict(options)
         if asset_id in self:
             instances = self[asset_id].instances[docname]
             instance = len(instances)
             instances.append(asset_options)
-            if asset_type is not None and self[asset_id].type is None:
+            if not is_ref and self[asset_id].location is None:
                 location = AssetLocationTuple(docname, instance)
                 self[asset_id] = self[asset_id]._replace(type=asset_type, location=location)
             return
 
-        if asset_type is not None:
+        if is_ref:
             location = None
         else:
             location = AssetLocationTuple(docname, 0)

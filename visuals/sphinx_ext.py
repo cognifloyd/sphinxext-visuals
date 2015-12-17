@@ -60,13 +60,34 @@ def assets_init(app):
 def assets_purge_doc(app, docname):
     """
     This triggers the assets merge in the environment
+    :param docname: see AssetsDict.purge_doc
+    :param sphinx.application.Sphinx app: Sphinx Application
     """
     app.env.assets.purge_doc(docname)
+
+
+def assets_add_visual(app, visual_node):
+    """
+    This triggers the assets merge in the environment
+    :param visual visual_node: The node to work with.
+    :param sphinx.application.Sphinx app: Sphinx Application
+    """
+    docname = visual_node['docname']
+    asset_id = visual_node['visualid']
+    # TODO: Options filtering is done in AssetOptionsDict, but maybe it should be here
+    options = visual_node.options
+    asset_type = visual_node['type']
+    is_ref = visual_node.is_ref()
+
+    app.env.assets.add_asset(docname, asset_id, options, asset_type, is_ref)
 
 
 def assets_merge(app, docnames, other):
     """
     This triggers the assets merge in the environment
+    :param sphinx.application.Sphinx app: Sphinx Application
+    :param docnames: see AssetsDict.merge_other
+    :param other: see AssetsDict.merge_other
     """
     app.env.assets.merge_other(docnames, other)
 
@@ -163,6 +184,8 @@ def setup(app):
     app.add_event('visual-node-inited')
     app.add_event('visual-caption-and-legend-extracted')
     app.add_event('visual-node-generated')
+
+    app.connect('visual-node-generated', assets_add_visual)
 
     # Phase 1: Reading
     #   docutils transforms
