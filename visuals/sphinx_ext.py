@@ -17,41 +17,58 @@ from sphinx.util import FilenameUniqDict
 
 from rst.directives import Visual
 from rst.nodes import visual
-from utils.assets import AssetsDict
+from utils.assets import AssetsDict, AssetsMetadataDict
 # from client import VisualsClient
 
 __version__ = '0.1'
 
 
-def builder_init_for_visuals(app):
+def assets_init(app):
     """
-    app.builder.images = {}
-        "images that need to be copied over (source -> dest)"
-        Or, in other words, the image must exist in the source files.
-        That doesn't make sense for visuals, because images are externally sourced.
+    visual assets are externally sourced from some DAM (digital asset manager)
+    or are externally generated as would be done through the visuals API.
+    That lead to the following design decisions:
 
-    app.env.images = FilenameUniqDict()
-        "map absolute path -> (docname, unique filename)"
+    This uses app.env.assets* because both app.builder.images and app.env.images:
+    - are too widely used throughout sphinx to modify safely
+    - deal with local image files (copy from source files to output)
+    - require that the image files exist in the project's source files
+    - assume that the image files are relative to the docname that includes them
 
-    Instead, visuals will add its own map of images.
+    This uses AssetsDict instead of FilenameUniqDict because we don't need filenames
+
+    Sphinx's image infrastructure also took care of:
+    - select alternative image types
+    - image translation
+    - additional image-related post processing and transforms
+    These might need to be replaced in visuals.
 
     :param sphinx.application.Sphinx app: Sphinx Application
     """
 
-    # builder = app.builder
-    # """:type builder: sphinx.builders.Builder"""
-
-    # builder.images[candidate] = app.config.visuals_local_temp_image
-    # app.env.images.add_file(docname, imgpath)
-
-    # builder.visuals = {}
-    # app.env.visuals = FilenameUniqDict()
-
+    # the primary list of all visual assets, extracted from the doctree.
     app.env.assets = AssetsDict()
-    # {assetid: {AssetLocationTuple: status}}
-    # app.env.assets_status = {}  # asset generation status (use placeholder if not done)
-    # {assetid: {AssetLocationTuple: uri}}
-    # app.env.assets_uris = {}  # the final uri or oembed block with info for builder
+
+    # asset generation status (use placeholder if not done)
+    app.env.assets_status = AssetsMetadataDict()
+    # the final uri or oembed block with info for builder
+    app.env.assets_final = AssetsMetadataDict()
+    # TODO: Maybe this should be made with a slice from assets_status
+    # TODO: Maybe the final stuff should go in the builder
+
+
+def assets_purge_doc(app, docname):
+    """
+    This triggers the assets merge in the environment
+    """
+    app.env.assets.purge_doc(docname)
+
+
+def assets_merge(app, docnames, other):
+    """
+    This triggers the assets merge in the environment
+    """
+    app.env.assets.merge_other(docnames, other)
 
 
 def process_visuals(app, doctree):
@@ -131,7 +148,8 @@ def setup(app):
     """
     # Phase 0: Initialization
     #   sphinx init
-    app.connect('builder-inited', builder_init_for_visuals)
+    app.connect('builder-inited', assets_init)
+    app.connect('env-purge-doc', assets_purge_doc)
     app.add_config_value('visuals_local_temp_image', 'http://example.com/placeholder-uri', 'env')
 
     # Phase 1: Reading
@@ -150,6 +168,10 @@ def setup(app):
     #   docutils transforms
     # app.add_transform(VisualsTransform)
 
+    # NOTE: use transforms (above) to manipulate image nodes:
+    # - after source-read event
+    # - before process_images (which runs before doctree-read event)
+
     # Phase 1: Reading
     #   sphinx post-processing
     app.connect('doctree-read', process_visuals)
@@ -157,8 +179,9 @@ def setup(app):
     # Phase 3: Resolving
     #   sphinx final stage before writing
     app.connect('doctree-resolved', resolve_visuals)
+    app.connect('env-merge-info', assets_merge)
 
     # Phase 4: Writing
-    #   docutils writer visitors: see docutils parsing section.
+    #   docutils writer visitors: see docutils parsing in Phase 1
 
     return {'version': __version__, 'parallel_read_safe': True}
