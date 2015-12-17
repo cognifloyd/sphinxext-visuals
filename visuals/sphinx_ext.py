@@ -17,6 +17,7 @@ from sphinx.util import FilenameUniqDict
 
 from rst.directives import Visual
 from rst.nodes import visual
+from utils import DeepChainMap
 from utils.assets import AssetsDict, AssetsMetadataDict
 # from client import VisualsClient
 
@@ -49,12 +50,17 @@ def assets_init(app):
     # the primary list of all visual assets, extracted from the doctree.
     app.env.assets = AssetsDict()
 
-    # asset generation status (use placeholder if not done)
-    app.env.assets_status = AssetsMetadataDict()
+    # asset generation status (builder will use placeholder if not done)
+    app.env.asset_defs_status = AssetsMetadataDict()  # use assets.list_definitions
+    app.env.asset_refs_status = AssetsMetadataDict()  # use assets.list_references
+    app.env.assets_status = DeepChainMap(app.env.assets_defs_status, app.env.assets_refs_status)
+
     # the final uri or oembed block with info for builder
-    app.env.assets_final = AssetsMetadataDict()
+    app.builder.assets = AssetsMetadataDict()
     # TODO: Maybe this should be made with a slice from assets_status
-    # TODO: Maybe the final stuff should go in the builder
+
+    # TODO: It might be good to have a Dict that is not per instance, but per asset.
+    app.builder.assets_instances = AssetsMetadataDict()
 
 
 def assets_purge_doc(app, docname):

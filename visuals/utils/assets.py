@@ -29,6 +29,11 @@ class AssetsDict(dict):
                 }
             )}
 
+    Asset instances includes both definitions and references.
+    An asset reference only has location in (docname + index) in AssetTuple.instances.
+    An asset definition has its location in AssetTuple.location, not just in instances.
+    Assets can have references without definitions, suggesting that the asset is defined externally.
+
     example access:
         assets['some id'].type
         assets['some id'].location.docname
@@ -37,6 +42,7 @@ class AssetsDict(dict):
 
     Some logic based on sphinx.util.FilenameUniqDict
     """
+
     def add_asset(self, docname, asset_id, options, asset_type, is_ref=False):
         asset_options = AssetOptionsDict(options)
         if asset_id in self:
@@ -97,7 +103,7 @@ class AssetsDict(dict):
             (asset_id, AssetLocationTuple(docname, instance_index))
 
         :param list docnames: Only include asset instances in these docnames
-        :return list: list of all asset instances
+        :return list: list of all asset instances (definitions & references)
         """
         instance_list = []
         for asset_id, (asset_type, location, instances) in list(self.items()):
@@ -107,6 +113,34 @@ class AssetsDict(dict):
                 for index in range(len(instances[docname])):
                     instance_list.append((asset_id, AssetLocationTuple(docname, index)))
         return instance_list
+
+    def list_definitions(self, docnames):
+        """
+        :param list docnames: Only include asset instances in these docnames
+        :return list: list of all asset definitions
+        """
+        def_list = []
+        for asset_id, (asset_type, location, instances) in list(self.items()):
+            if location is None or docnames is not None and location.docname not in docnames:
+                continue
+            def_list.append((asset_id, location))
+        return def_list
+
+    def list_references(self, docnames):
+        """
+        :param list docnames: Only include asset instances in these docnames
+        :return list: list of all asset references
+        """
+        ref_list = []
+        for asset_id, (asset_type, location, instances) in list(self.items()):
+            for docname in list(instances.keys()):
+                if docnames is not None and docname not in docnames:
+                    continue
+                for index in range(len(instances[docname])):
+                    instance_location = AssetLocationTuple(docname, index)
+                    if instance_location is not location:
+                        ref_list.append((asset_id, AssetLocationTuple(docname, index)))
+        return ref_list
 
 
 AssetTuple = namedtuple('AssetTuple',
