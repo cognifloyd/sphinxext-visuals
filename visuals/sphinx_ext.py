@@ -13,12 +13,12 @@
 from __future__ import absolute_import
 
 from docutils import nodes
-from sphinx.util import FilenameUniqDict
+from docutils.transforms import Transform
 
 from rst.directives import Visual
 from rst.nodes import visual
 from utils import DeepChainMap
-from utils.assets import AssetsDict, AssetsMetadataDict
+from utils.assets import AssetsDict, AssetLocationTuple
 # from client import VisualsClient
 
 __version__ = '0.1'
@@ -50,17 +50,12 @@ def assets_init(app):
     # the primary list of all visual assets, extracted from the doctree.
     app.env.assets = AssetsDict()
 
-    # asset generation status (builder will use placeholder if not done)
-    app.env.asset_defs_status = AssetsMetadataDict()  # use assets.list_definitions
-    app.env.asset_refs_status = AssetsMetadataDict()  # use assets.list_references
-    app.env.assets_status = DeepChainMap(app.env.assets_defs_status, app.env.assets_refs_status)
-
     # the final uri or oembed block with info for builder
-    app.builder.assets = AssetsMetadataDict()
+    app.builder.assets = {}
     # TODO: Maybe this should be made with a slice from assets_status
 
     # TODO: It might be good to have a Dict that is not per instance, but per asset.
-    app.builder.assets_instances = AssetsMetadataDict()
+    app.builder.assets_instances = {}
 
 
 def assets_purge_doc(app, docname):
@@ -86,7 +81,13 @@ def assets_add_visual(app, visual_node):
     asset_type = visual_node['type']
     is_ref = visual_node.is_ref()
 
+    # add asset to the asset catalog
     app.env.assets.add_asset(docname, asset_id, options, asset_type, is_ref)
+
+    # Make the instance number accessible when parsing the tree
+    visual_node['instance'] = len(app.env.assets.get_instances(asset_id, docname))
+    # Note: every time a doc is purged, all instances in that doc are purged.
+    # So, instance numbers should be consistent across runs, based on source order.
 
 
 def assets_merge(app, docnames, other):
@@ -99,10 +100,36 @@ def assets_merge(app, docnames, other):
     app.env.assets.merge_other(docnames, other)
 
 
+class FixTypesOnVisualReferences(Transform):
+    """
+    If a visual node is a reference, then node['type'] might be incorrect.
+    This makes the definition's type take precedence (if defined)
+
+    This Transform depends on env.assets being populated.
+    """
+    default_priority = 210
+
+    def apply(self):
+        assets = self.document.settings.env.assets
+        """:type assets: AssetsDict"""
+
+        for node in self.document.traverse(visual):
+            node_type = assets.get_type(node['visualid'])
+            if node_type is None:
+                # Then this asset_id doesn't have any definitions.
+                # So, leave the defined type as is.
+                continue
+            elif node.is_ref():
+                # All references should match the type on the definition.
+                node['type'] = node_type
+
+
 def process_visuals(app, doctree):
     """
-    This should send the request to generate the images
-    storing status/URI if known
+    This should send the request to generate the images storing status/URI if known
+    (builder will use placeholder if not done)
+
+    This expects env.assets to be a complete list that will not change.
 
     :param sphinx.application.Sphinx app: Sphinx Application
     :param nodes.document doctree: The doctree of all docs in the project
@@ -110,11 +137,38 @@ def process_visuals(app, doctree):
     """
     env = app.builder.env
     """:type env: sphinx.environment.BuildEnvironment"""
+    assets = env.assets
+    """:type assets: AssetsDict"""
 
-    if not hasattr(env, 'visuals'):
-        env.visuals = FilenameUniqDict()
+    # asset generation/retrieval status
+    env.asset_defs_status = {asset: None for asset in assets.list_definitions()}
+    env.asset_refs_status = {asset: None for asset in assets.list_references()}
+    # noinspection PyUnresolvedReferences
+    env.assets_status = DeepChainMap(env.assets_defs_status, env.assets_refs_status)
+
     for node in doctree.traverse(visual):
-        env.visuals.add_file(env.docname, node['visualid'])
+        asset_id = node['visualid']
+        location = AssetLocationTuple(node['docname'], node['instance'])
+        options = assets.get_options(asset_id, location)
+        content = node['content_block']
+        node_type = node['type']
+
+        node_status = env.assets_status[(asset_id, location)]
+
+        if node.is_ref():
+            process_visual_reference(asset_id, location, node_type, options, node_status)
+        else:
+            process_visual_definition(asset_id, location, node_type, options, content, node_status)
+
+
+def process_visual_reference(asset_id, location, node_type, options, node_status):
+    # Process refs
+    pass
+
+
+def process_visual_definition(asset_id, location, node_type, options, content, node_status):
+    # Process defs
+    pass
 
 
 def resolve_visuals(app, doctree, docname):
@@ -127,9 +181,9 @@ def resolve_visuals(app, doctree, docname):
     :param nodes.document doctree: The doctree of all docs in the project
     :param str docname: the path/filename relative to project (without extension)
     """
-    for node in doctree.traverse(visual):
-        visual['placeholder'] = True
-    pass
+    # for node in doctree.traverse(visual):
+    #     visual['placeholder'] = True
+    # pass
 
 
 def visit_visual(self, node):
@@ -202,7 +256,7 @@ def setup(app):
 
     # Phase 1: Reading
     #   docutils transforms
-    # app.add_transform(VisualsTransform)
+    app.add_transform(FixTypesOnVisualReferences)
 
     # NOTE: use transforms (above) to manipulate image nodes:
     # - after source-read event

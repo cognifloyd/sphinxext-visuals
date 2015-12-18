@@ -57,6 +57,9 @@ class AssetsDict(dict):
 
         if is_ref:
             location = None
+            # in the AssetDict, asset_type only applies to asset definitions, not references.
+            # node['type'] should still be accessible on reference nodes if needed.
+            asset_type = None
         else:
             location = AssetLocationTuple(docname, 0)
 
@@ -114,7 +117,7 @@ class AssetsDict(dict):
                     instance_list.append((asset_id, AssetLocationTuple(docname, index)))
         return instance_list
 
-    def list_definitions(self, docnames):
+    def list_definitions(self, docnames=None):
         """
         :param list docnames: Only include asset instances in these docnames
         :return list: list of all asset definitions
@@ -126,7 +129,7 @@ class AssetsDict(dict):
             def_list.append((asset_id, location))
         return def_list
 
-    def list_references(self, docnames):
+    def list_references(self, docnames=None):
         """
         :param list docnames: Only include asset instances in these docnames
         :return list: list of all asset references
@@ -141,6 +144,15 @@ class AssetsDict(dict):
                     if instance_location is not location:
                         ref_list.append((asset_id, AssetLocationTuple(docname, index)))
         return ref_list
+
+    def get_type(self, asset_id):
+        return self[asset_id].type
+
+    def get_instances(self, asset_id, docname):
+        return self[asset_id].instances[docname]
+
+    def get_options(self, asset_id, location):
+        return self[asset_id].instances[location.docname][location.instance]
 
 
 AssetTuple = namedtuple('AssetTuple',
@@ -185,17 +197,3 @@ class AssetOptionsDict(dict):
         for filtered_key in filtered:
             del options[filtered_key]
         super().__init__(options)
-
-
-class AssetsMetadataDict(dict):
-    """
-    An dictionary that tracks metadata about each asset instance in an AssetsDict.
-
-    This initializes as an empty dict.
-    Before using, pass your AssetsDict into populate() which also runs clear().
-    """
-    def populate(self, assets):
-        self.clear()
-        instances_list = assets.list_instances()
-        for instance in instances_list:
-            self[instance] = None
