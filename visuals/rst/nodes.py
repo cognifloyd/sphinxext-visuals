@@ -28,3 +28,47 @@ class visual(nodes.General, nodes.Element):
         :return bool:
         """
         return not self['content_block']
+
+
+def visit_visual(self, node):
+    """
+    self is a sphinx/writer/*Translator which implements docutils.nodes.NodeVisitor
+    node is a visual node
+
+    I can't just assume that visual=figure,
+    because it might be a screencast (or some other oembed) instead of an image
+
+    This should only add any wrapper stuff (divs in html or similar)
+    The Translator will call the appropriate visit_* on subnodes as well,
+    so we can just pass most of the time.
+
+    Related visitors:
+     self.visit_figure
+      self.visit_image
+      self.visit_caption
+      self.visit_legend
+
+    If I need to prevent visit_/depart_ on all children:
+    raise nodes.SkipNode
+    This might be especially helpful in text writers
+
+    :param nodes.NodeVisitor self:
+    :param visual node:
+    """
+    # client = VisualsClient()
+    # node['uri'] = client.geturi(node)
+    # the client could modify node['type'] here, right?
+
+    if node['placeholder']:
+        for image in node.traverse(nodes.image):
+            image['uri'] = 'placeholder uri'
+    pass
+
+
+def depart_visual(self, node):
+    """
+    See visit_visual
+    :param nodes.NodeVisitor self:
+    :param visual node:
+    """
+    pass

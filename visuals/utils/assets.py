@@ -15,6 +15,47 @@ from __future__ import absolute_import
 from collections import namedtuple
 
 
+# AssetStatus = namedtuple('AssetStatus', ['requested', 'available', 'downloaded', 'error'])
+
+# states = ['new', 'requested', 'processing', 'created', 'available', 'downloaded']
+# states_ok = ['new', 'requested', 'available', 'downloaded']
+# states_error = ['rejected', 'failed']
+from utils import DeepChainMap
+
+
+class AssetStatus(object):
+
+    def __init__(self):
+        self.requested = False
+        self.available = False
+        self.downloaded = False
+        self.error = None
+
+
+def add_assets_status_to(obj, assets):
+    """
+    Adds the asset status tracking dicts
+
+    :param obj: An object that will get assets_status (typically sphinx.environment.BuildEnvironment)
+    :param AssetsDict assets: The assets that will initialize the assets_status
+    """
+
+    if not obj.assets_status:
+        # asset generation/retrieval status
+        obj.asset_defs_status = {asset: AssetStatus() for asset in assets.list_definitions()}
+        obj.asset_refs_status = {asset: AssetStatus() for asset in assets.list_references()}
+        obj.assets_status = DeepChainMap(obj.assets_defs_status, obj.assets_refs_status)
+        # TODO: Make sure these are pickle-able in env.topickle()
+    else:
+        # Don't overwrite any pre-existing status
+        for asset in assets.list_definitions():
+            if not obj.asset_defs_status[asset]:
+                obj.asset_defs_status[asset] = AssetStatus()
+        for asset in assets.list_references():
+            if not obj.asset_refs_status[asset]:
+                obj.asset_refs_status[asset] = AssetStatus()
+
+
 class AssetsDict(dict):
     """
     A dictionary of AssetTuples indexed by asset_id
@@ -23,7 +64,7 @@ class AssetsDict(dict):
         {asset_id:
             AssetTuple(
                 type,
-                location=AssetLocationTuple(docname, instance),
+                location=AssetLocation(docname, instance),
                 instances={docname:
                     [AssetOptionsDict]  # This is an ordered list of instance options
                 }
@@ -50,7 +91,7 @@ class AssetsDict(dict):
             instance = len(instances)
             instances.append(asset_options)
             if not is_ref and self[asset_id].location is None:
-                location = AssetLocationTuple(docname, instance)
+                location = AssetLocation(docname, instance)
                 # noinspection PyProtectedMember
                 self[asset_id] = self[asset_id]._replace(type=asset_type, location=location)
             return
@@ -61,7 +102,7 @@ class AssetsDict(dict):
             # node['type'] should still be accessible on reference nodes if needed.
             asset_type = None
         else:
-            location = AssetLocationTuple(docname, 0)
+            location = AssetLocation(docname, 0)
 
         self[asset_id] = AssetTuple(asset_type, location, {docname: [asset_options]})
         return
@@ -103,7 +144,7 @@ class AssetsDict(dict):
         Otherwise, all instances of all assets will be included.
 
         The list contains tuples of the form:
-            (asset_id, AssetLocationTuple(docname, instance_index))
+            (asset_id, AssetLocation(docname, instance_index))
 
         :param list docnames: Only include asset instances in these docnames
         :return list: list of all asset instances (definitions & references)
@@ -114,7 +155,8 @@ class AssetsDict(dict):
                 if docnames is not None and docname not in docnames:
                     continue
                 for index in range(len(instances[docname])):
-                    instance_list.append((asset_id, AssetLocationTuple(docname, index)))
+                    instance_list.append((asset_id, AssetLocation(docname, index)))
+        # TODO: Make this a generator instead
         return instance_list
 
     def list_definitions(self, docnames=None):
@@ -127,6 +169,7 @@ class AssetsDict(dict):
             if location is None or docnames is not None and location.docname not in docnames:
                 continue
             def_list.append((asset_id, location))
+        # TODO: Make this a generator instead
         return def_list
 
     def list_references(self, docnames=None):
@@ -140,9 +183,10 @@ class AssetsDict(dict):
                 if docnames is not None and docname not in docnames:
                     continue
                 for index in range(len(instances[docname])):
-                    instance_location = AssetLocationTuple(docname, index)
+                    instance_location = AssetLocation(docname, index)
                     if instance_location is not location:
-                        ref_list.append((asset_id, AssetLocationTuple(docname, index)))
+                        ref_list.append((asset_id, AssetLocation(docname, index)))
+        # TODO: Make this a generator instead
         return ref_list
 
     def get_type(self, asset_id):
@@ -157,11 +201,11 @@ class AssetsDict(dict):
 
 AssetTuple = namedtuple('AssetTuple',
                         ['type',      # The asset type (generally, an oembed type)
-                         'location',  # an AssetLocationTuple
+                         'location',  # an AssetLocation
                          'instances'  # an AssetInstancesDict
                          ])
 
-AssetLocationTuple = namedtuple('AssetLocationTuple', ['docname', 'instance'])
+AssetLocation = namedtuple('AssetLocation', ['docname', 'instance'])
 """
 Identifies the location of a particular instance of an asset in a given doc.
 instance is normally 0, unless it is not the first instance of the asset in the doc.

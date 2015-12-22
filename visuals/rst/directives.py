@@ -17,8 +17,9 @@ from docutils.parsers.rst.directives.images import Figure, Image
 from docutils.statemachine import StringList
 from sphinx.util.nodes import set_source_info
 
-import utils.rst
-from rst.nodes import visual
+from visuals.utils.sphinx import sphinx_emit
+from visuals.utils.rst import set_type_info, make_caption_for_directive, make_dummy_directive, list_directives_in_block
+from visuals.rst.nodes import visual
 
 
 class Visual(Figure):
@@ -57,7 +58,7 @@ class Visual(Figure):
     def run(self):
         visual_node = visual(is_figure=False)
         set_source_info(self, visual_node)
-        utils.rst.set_type_info(self, visual_node)
+        set_type_info(self, visual_node)
 
         visual_node['docname'], visual_node['visualid'] = self.get_visual_id_info()
         self.options['name'] = visual_node['visualid']
@@ -107,7 +108,7 @@ class Visual(Figure):
     def get_caption(self):
         caption = self.options.pop('caption', None)
         if caption is not None:
-            return utils.rst.make_caption_for_directive(self, caption)
+            return make_caption_for_directive(self, caption)
         else:
             return None
 
@@ -132,7 +133,7 @@ class Visual(Figure):
         """:type state: docutils.parsers.rst.states.Body"""
 
         # we only use the first legend, don't overwrite. (limit=1)
-        directives_list = utils.rst.list_directives_in_block(content_offset, content_block, type_limit=['legend'],
+        directives_list = list_directives_in_block(content_offset, content_block, type_limit=['legend'],
                                                              limit=1)
 
         if not directives_list:  # then there is no legend
@@ -141,7 +142,7 @@ class Visual(Figure):
         (offset_in_block, directive_offset, directive_name, match) = directives_list[0]
 
         legend_directive \
-            = utils.rst.make_dummy_directive(directive_name, optional_arguments=0, final_argument_whitespace=False)
+            = make_dummy_directive(directive_name, optional_arguments=0, final_argument_whitespace=False)
 
         block, indent, blank_finish \
             = content_block.get_indented(start=offset_in_block, first_indent=match.end())
@@ -217,6 +218,4 @@ class Visual(Figure):
         Emit a signal so that other extensions can influence the processing of visual nodes
         :param string event: represents an event registered with Sphinx
         """
-        # self.app is only available when app.update() is running
-        if self.app is not None:
-            self.app.emit(event, *args)
+        sphinx_emit(self.app, event, *args)

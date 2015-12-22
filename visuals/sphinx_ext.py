@@ -6,6 +6,9 @@
     This package is a namespace package that contains ``visuals``
     an extension for Sphinx.
 
+    Naming convention (event_*) for the functions in this file borrowed from:
+    github.com/Robpol86/sphinxcontrib-imgur (MIT License)
+
     :copyright: Copyright 2015 by the contributors, see AUTHORS.
     :license: BSD, see LICENSE for details.
 """
@@ -13,18 +16,18 @@
 from __future__ import absolute_import
 
 from docutils import nodes
-from docutils.transforms import Transform
+# from docutils.transforms import Transform
 
-from rst.directives import Visual
-from rst.nodes import visual
-from utils import DeepChainMap
-from utils.assets import AssetsDict, AssetLocationTuple
-# from client import VisualsClient
+from visuals.rst.directives import Visual
+from visuals.rst.nodes import visual, visit_visual, depart_visual
+from visuals.rst.processing import add_visual_to_assets
+from visuals.utils.assets import AssetsDict, add_assets_status_to
+from visuals.utils.sphinx import sphinx_emit, pickle_doctree
 
 __version__ = '0.1'
 
 
-def assets_init(app):
+def event_builder_inited(app):
     """
     visual assets are externally sourced from some DAM (digital asset manager)
     or are externally generated as would be done through the visuals API.
@@ -58,39 +61,44 @@ def assets_init(app):
     app.builder.assets_instances = {}
 
 
-def assets_purge_doc(app, docname):
+def event_env_purge_doc(app, docname):
     """
     This triggers the assets merge in the environment
     :param docname: see AssetsDict.purge_doc
     :param sphinx.application.Sphinx app: Sphinx Application
     """
     app.env.assets.purge_doc(docname)
+    # TODO: purge assets_status
+    #       maybe change DeepChainMap to have purge_doc
+    #       which caches the status in a separate structure until status is reinited
+    #       dropping the cached entry if the doc no longer exists.
 
 
-def assets_add_visual(app, visual_node):
+def event_visual_node_generated(app, visual_node):
     """
-    This triggers the assets merge in the environment
-    :param visual visual_node: The node to work with.
+    Modify the visual_node, as required without shoving everything into visual itself.
+
     :param sphinx.application.Sphinx app: Sphinx Application
+    :param visual visual_node: The just generated visual node
     """
-    docname = visual_node['docname']
-    asset_id = visual_node['visualid']
-    # TODO: Options filtering is done in AssetOptionsDict, but maybe it should be here
-    # noinspection PyUnresolvedReferences
-    options = visual_node.options
-    asset_type = visual_node['type']
-    is_ref = visual_node.is_ref()
-
-    # add asset to the asset catalog
-    app.env.assets.add_asset(docname, asset_id, options, asset_type, is_ref)
-
-    # Make the instance number accessible when parsing the tree
-    visual_node['instance'] = len(app.env.assets.get_instances(asset_id, docname))
-    # Note: every time a doc is purged, all instances in that doc are purged.
-    # So, instance numbers should be consistent across runs, based on source order.
+    # TODO: Maybe move the type-specific visual processing here? (eg image runs Figure/Image)
+    pass
 
 
-def assets_merge(app, docnames, other):
+def event_doctree_read(app, doctree):
+    """
+    Visuals processing at the "doctree-read" event
+
+    Runs once per doc (one doctree per docname)
+
+    :param sphinx.application.Sphinx app: Sphinx Application
+    :param nodes.document doctree: The doctree of a particular docname in the project
+    """
+    for visual_node in doctree.traverse(visual):
+        add_visual_to_assets(app.env.assets, visual_node)
+
+
+def event_env_merge_info(app, docnames, other):
     """
     This triggers the assets merge in the environment
     :param sphinx.application.Sphinx app: Sphinx Application
@@ -98,80 +106,68 @@ def assets_merge(app, docnames, other):
     :param other: see AssetsDict.merge_other
     """
     app.env.assets.merge_other(docnames, other)
+    # TODO: Merge assets_status
 
 
-class FixTypesOnVisualReferences(Transform):
+def event_env_updated(app, env):
     """
-    If a visual node is a reference, then node['type'] might be incorrect.
-    This makes the definition's type take precedence (if defined)
-
-    This Transform depends on env.assets being populated.
-    """
-    default_priority = 210
-
-    def apply(self):
-        assets = self.document.settings.env.assets
-        """:type assets: AssetsDict"""
-
-        for node in self.document.traverse(visual):
-            node_type = assets.get_type(node['visualid'])
-            if node_type is None:
-                # Then this asset_id doesn't have any definitions.
-                # So, leave the defined type as is.
-                continue
-            elif node.is_ref():
-                # All references should match the type on the definition.
-                node['type'] = node_type
-
-
-def process_visuals(app, doctree):
-    """
-    This should send the request to generate the images storing status/URI if known
-    (builder will use placeholder if not done)
-
-    This expects env.assets to be a complete list that will not change.
+    This emits some additional sphinx events to allow additional processing
+    after "Phase 1: Read", but before the env is pickled (which happens during
+    "Phase 2: Consistency Checks").
 
     :param sphinx.application.Sphinx app: Sphinx Application
-    :param nodes.document doctree: The doctree of all docs in the project
-    :return:
+    :param sphinx.environment.BuildEnvironment env: Sphinx Environment
     """
-    env = app.builder.env
-    """:type env: sphinx.environment.BuildEnvironment"""
+    sphinx_emit(app, 'before-doctree-extra-processing', app, env)
+    for docname in env.all_docs:
+        # TODO: Parallel processing
+        doctree = env.get_doctree(docname)
+        # Return True if the doctree needs to be re-pickled.
+        re_pickle = sphinx_emit(app, 'doctree-extra-processing', app, env, docname, doctree)
+        if True in re_pickle:
+            pickle_doctree(env, docname, doctree)
+
+    sphinx_emit(app, 'before-pickle-env', app, env)
+
+
+def event_before_doctree_extra_processing(app, env):
+    """
+    Adds the asset status tracking dicts
+    :param sphinx.application.Sphinx app: Sphinx Application
+    :param sphinx.environment.BuildEnvironment env: Sphinx Environment
+    """
     assets = env.assets
     """:type assets: AssetsDict"""
 
-    # asset generation/retrieval status
-    env.asset_defs_status = {asset: None for asset in assets.list_definitions()}
-    env.asset_refs_status = {asset: None for asset in assets.list_references()}
-    # noinspection PyUnresolvedReferences
-    env.assets_status = DeepChainMap(env.assets_defs_status, env.assets_refs_status)
-
-    for node in doctree.traverse(visual):
-        asset_id = node['visualid']
-        location = AssetLocationTuple(node['docname'], node['instance'])
-        options = assets.get_options(asset_id, location)
-        content = node['content_block']
-        node_type = node['type']
-
-        node_status = env.assets_status[(asset_id, location)]
-
-        if node.is_ref():
-            process_visual_reference(asset_id, location, node_type, options, node_status)
-        else:
-            process_visual_definition(asset_id, location, node_type, options, content, node_status)
+    add_assets_status_to(env, assets)
 
 
-def process_visual_reference(asset_id, location, node_type, options, node_status):
-    # Process refs
-    pass
+def event_doctree_extra_processing(app, env, docname, doctree):
+    """
+    Secondary pass through all doctrees, after Read phase, before env pickling.
+
+    Runs once per doc (one doctree per docname)
+
+    env.assets should be complete by this point.
+
+    :param sphinx.application.Sphinx app: Sphinx Application
+    :param sphinx.environment.BuildEnvironment env: Sphinx Environment
+    :param string docname: The name of the doc that the doctree represents
+    :param nodes.document doctree: The doctree of a particular docname in the project
+    :return boolean: True if doctree needs to be re-pickled.
+    """
+    return False
 
 
-def process_visual_definition(asset_id, location, node_type, options, content, node_status):
-    # Process defs
-    pass
+def event_before_pickle_env(app, env):
+    """
+
+    :param sphinx.application.Sphinx app: Sphinx Application
+    :param sphinx.environment.BuildEnvironment env: Sphinx Environment
+    """
 
 
-def resolve_visuals(app, doctree, docname):
+def event_doctree_resolved(app, doctree, docname):
     """
     This should recheck for any visuals that need to be rendered
     For those, it sends the full visual content (if needed)
@@ -186,62 +182,17 @@ def resolve_visuals(app, doctree, docname):
     # pass
 
 
-def visit_visual(self, node):
-    """
-    self is a sphinx/writer/*Translator which implements docutils.nodes.NodeVisitor
-    node is a visual node
-
-    I can't just assume that visual=figure,
-    because it might be a screencast (or some other oembed) instead of an image
-
-    This should only add any wrapper stuff (divs in html or similar)
-    The Translator will call the appropriate visit_* on subnodes as well,
-    so we can just pass most of the time.
-
-    Related visitors:
-     self.visit_figure
-      self.visit_image
-      self.visit_caption
-      self.visit_legend
-
-    If I need to prevent visit_/depart_ on all children:
-    raise nodes.SkipNode
-    This might be especially helpful in text writers
-
-    :param nodes.NodeVisitor self:
-    :param visual node:
-    """
-    # client = VisualsClient()
-    # node['uri'] = client.geturi(node)
-    # the client could modify node['type'] here, right?
-
-    if node['placeholder']:
-        for image in node.traverse(nodes.image):
-            image['uri'] = 'placeholder uri'
-    pass
-
-
-def depart_visual(self, node):
-    """
-    See visit_visual
-    :param nodes.NodeVisitor self:
-    :param visual node:
-    """
-    pass
-
-
 def setup(app):
     """ sphinx setup that runs before builder is loaded
     :param sphinx.application.Sphinx app: Sphinx Application
     """
     # Phase 0: Initialization
     #   sphinx init
-    app.connect('builder-inited', assets_init)
-    app.connect('env-purge-doc', assets_purge_doc)
+    app.connect('builder-inited', event_builder_inited)
     app.add_config_value('visuals_local_temp_image', 'http://example.com/placeholder-uri', 'env')
 
     # Phase 1: Reading
-    #   docutils parsing (and writer visitors in Phase 4)
+    #   docutils parsing (and writer visitors for Phase 4)
     app.add_node(visual,
                  html=(visit_visual, depart_visual),
                  latex=(visit_visual, depart_visual),
@@ -252,26 +203,40 @@ def setup(app):
     app.add_event('visual-caption-and-legend-extracted')
     app.add_event('visual-node-generated')
 
-    app.connect('visual-node-generated', assets_add_visual)
+    app.connect('visual-node-generated', event_visual_node_generated)
 
-    # Phase 1: Reading
-    #   docutils transforms
-    app.add_transform(FixTypesOnVisualReferences)
-
-    # NOTE: use transforms (above) to manipulate image nodes:
+    # NOTE: use transforms to manipulate image nodes:
     # - after source-read event
     # - before process_images (which runs before doctree-read event)
 
     # Phase 1: Reading
-    #   sphinx post-processing
-    app.connect('doctree-read', process_visuals)
+    #   Sphinx start reading
+    app.connect('env-purge-doc', event_env_purge_doc)
+    #   docutils transforms (per docname)
+    # app.add_transform(Transform)
+    #   sphinx post-processing (per docname)
+    app.connect('doctree-read', event_doctree_read)
+    #   sphinx post-processing (per parallel read: multiple docnames)
+    app.connect('env-merge-info', event_env_merge_info)
+    #   after docutils parsing (env-updated is where the entire project has been parsed)
+    app.connect('env-updated', event_env_updated)
+    app.add_event('before-doctree-extra-processing')
+    app.add_event('doctree-extra-processing')
+    app.add_event('before-pickle-env')
+
+    app.connect('before-doctree-extra-processing', event_before_doctree_extra_processing)
+    app.connect('doctree-extra-processing', event_doctree_extra_processing)
+    app.connect('before-pickle-env', event_before_pickle_env)
+
+    # Phase 2: Consistency Checks
+    #   No sphinx events.
 
     # Phase 3: Resolving
     #   sphinx final stage before writing
-    app.connect('doctree-resolved', resolve_visuals)
-    app.connect('env-merge-info', assets_merge)
+    app.connect('doctree-resolved', event_doctree_resolved)
 
     # Phase 4: Writing
     #   docutils writer visitors: see docutils parsing in Phase 1
 
+    # TODO: Make sure that everything really is parallel safe (parallel is important!)
     return {'version': __version__, 'parallel_read_safe': True}
