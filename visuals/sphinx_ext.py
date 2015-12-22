@@ -14,10 +14,14 @@
 """
 
 from __future__ import absolute_import
+from os import path
 
 from docutils import nodes
 # from docutils.transforms import Transform
+from sphinx.util import copy_static_entry
+from sphinx.util.osutil import ensuredir
 
+from visuals import package_dir
 from visuals.rst.directives import Visual
 from visuals.rst.nodes import visual, visit_visual, depart_visual
 from visuals.rst.processing import add_visual_to_assets
@@ -182,6 +186,47 @@ def event_doctree_resolved(app, doctree, docname):
     # pass
 
 
+def monkey_patch_builder_finish(app):
+    """
+    Though html-collect-pages is an event at about the right point
+    to copy the placeholder image, it is not called for latex or texinfo.
+
+    So, monkey patch it!
+
+    :param sphinx.application.Sphinx app: Sphinx Application
+    """
+    builder = app.builder
+    """:type builder: sphinx.builders.Builder"""
+
+    # Only monkey patch if the builder supports images
+    if builder.supported_image_types:
+
+        def copy_visual_placeholder(self):
+            """
+            based on builders.html.copy_image_files
+
+            :param sphinx.builders.Builder self:
+            """
+
+            outdir = path.join(self.outdir, self.imagedir)
+            ensuredir(outdir)
+            source = path.join(package_dir, 'theme', 'default', 'static', 'FFFFFF-0.png')
+            try:
+                copy_static_entry(source, outdir, self)
+            except Exception as err:
+                self.warn('cannot copy image file %r: %s' %
+                          (source, err))
+
+        def finish(self):
+            """
+            :param sphinx.builders.Builder self:
+            """
+            super().finish()
+            self.finish_tasks.add_task(copy_visual_placeholder)
+
+        builder.finish = finish
+
+
 def setup(app):
     """ sphinx setup that runs before builder is loaded
     :param sphinx.application.Sphinx app: Sphinx Application
@@ -237,6 +282,10 @@ def setup(app):
 
     # Phase 4: Writing
     #   docutils writer visitors: see docutils parsing in Phase 1
+
+    #   builder-inited event used here to influence Phase 4's finish tasks.
+    #   which, as a hack, is logically separate from event_builder_inited
+    app.connect('builder-inited', monkey_patch_builder_finish)
 
     # TODO: Make sure that everything really is parallel safe (parallel is important!)
     return {'version': __version__, 'parallel_read_safe': True}

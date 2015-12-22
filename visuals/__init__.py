@@ -10,5 +10,9 @@
     :license: BSD, see LICENSE for details.
 """
 
+from os import path
+
 __import__('pkg_resources').declare_namespace(__name__)
+
+package_dir = path.abspath(path.dirname(__file__))
 
