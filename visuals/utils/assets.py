@@ -14,13 +14,51 @@ from __future__ import absolute_import
 
 from collections import namedtuple
 
+from visuals.utils import DeepChainMapWithFallback
 
-# AssetStatus = namedtuple('AssetStatus', ['requested', 'available', 'downloaded', 'error'])
 
-# states = ['new', 'requested', 'processing', 'created', 'available', 'downloaded']
-# states_ok = ['new', 'requested', 'available', 'downloaded']
-# states_error = ['rejected', 'failed']
-from utils import DeepChainMap
+AssetTuple = namedtuple('AssetTuple',
+                        ['type',      # The asset type (generally, an oembed type)
+                         'location',  # an AssetLocation
+                         'instances'  # a dict of asset instances
+                         ])
+
+AssetLocation = namedtuple('AssetLocation', ['docname', 'instance'])
+"""
+Identifies the location of a particular instance of an asset in a given doc.
+instance is normally 0, unless it is not the first instance of the asset in the doc.
+For cases where doc has multiple copies of the same asset.
+"""
+
+
+class AssetOptionsDict(dict):
+    """
+    A dictionary of asset options that are relevant for asset generation or sizing
+    Example keys:
+        height
+        width
+        scale
+
+    Some options are not needed, so we drop them
+    """
+    explicitly_allowed_keys = ['height', 'width', 'scale']
+    filtered_keys = [
+        # Image directive:
+        'alt', 'align', 'name', 'target', 'class',
+        # Figure directive:
+        'figwidth', 'figclass',
+        # Visual directive
+        'caption', 'type'
+    ]
+    # TODO: This is specific to how it's used in visuals. Make it more general if needed.
+
+    def __init__(self, options):
+        assert isinstance(options, dict)
+        # TODO: Can this support an iterable too?
+        filtered = set(options.keys()) - set(self.filtered_keys)
+        for filtered_key in filtered:
+            del options[filtered_key]
+        super().__init__(options)
 
 
 class AssetStatus(object):
@@ -30,30 +68,6 @@ class AssetStatus(object):
         self.available = False
         self.downloaded = False
         self.error = None
-
-
-def add_assets_status_to(obj, assets):
-    """
-    Adds the asset status tracking dicts
-
-    :param obj: An object that will get assets_status (typically sphinx.environment.BuildEnvironment)
-    :param AssetsDict assets: The assets that will initialize the assets_status
-    """
-
-    if not obj.assets_status:
-        # asset generation/retrieval status
-        obj.asset_defs_status = {asset: AssetStatus() for asset in assets.list_definitions()}
-        obj.asset_refs_status = {asset: AssetStatus() for asset in assets.list_references()}
-        obj.assets_status = DeepChainMap(obj.assets_defs_status, obj.assets_refs_status)
-        # TODO: Make sure these are pickle-able in env.topickle()
-    else:
-        # Don't overwrite any pre-existing status
-        for asset in assets.list_definitions():
-            if not obj.asset_defs_status[asset]:
-                obj.asset_defs_status[asset] = AssetStatus()
-        for asset in assets.list_references():
-            if not obj.asset_refs_status[asset]:
-                obj.asset_refs_status[asset] = AssetStatus()
 
 
 class AssetsDict(dict):
@@ -199,45 +213,79 @@ class AssetsDict(dict):
         return self[asset_id].instances[location.docname][location.instance]
 
 
-AssetTuple = namedtuple('AssetTuple',
-                        ['type',      # The asset type (generally, an oembed type)
-                         'location',  # an AssetLocation
-                         'instances'  # an AssetInstancesDict
-                         ])
-
-AssetLocation = namedtuple('AssetLocation', ['docname', 'instance'])
-"""
-Identifies the location of a particular instance of an asset in a given doc.
-instance is normally 0, unless it is not the first instance of the asset in the doc.
-For cases where doc has multiple copies of the same asset.
-"""
-
-
-class AssetOptionsDict(dict):
+class AssetsMetadataDict(DeepChainMapWithFallback):
     """
-    A dictionary of asset options that are relevant for asset generation or sizing
-    Example keys:
-        height
-        width
-        scale
-
-    Some options are not needed, so we drop them
+    The AssetsMetadataDict is a combination of a definition dict and a references dict.
     """
-    explicitly_allowed_keys = ['height', 'width', 'scale']
-    filtered_keys = [
-        # Image directive:
-        'alt', 'align', 'name', 'target', 'class',
-        # Figure directive:
-        'figwidth', 'figclass',
-        # Visual directive
-        'caption', 'type'
-    ]
-    # TODO: This is specific to how it's used in visuals. Make it more general if needed.
 
-    def __init__(self, options):
-        assert isinstance(options, dict)
-        # TODO: Can this support an iterable too?
-        filtered = set(options.keys()) - set(self.filtered_keys)
-        for filtered_key in filtered:
-            del options[filtered_key]
-        super().__init__(options)
+    def __init__(self):
+        super().__init__(defs={}, refs={})
+
+    def purge_doc(self, docname, purge_in_fallback=False):
+        """
+        Moves all docs related to this docname into the fallback, excluding them from
+        defs and refs. If purge_in_fallback, then exclude them from the fallback as well.
+
+        :param list docname: Exclude all assets related to this docname
+        :param purge_in_fallback: Exclude all assets in fallback too, not just defs and refs.
+        """
+        for asset in self:  # does not iterate through fallback
+            if asset[1].docname == docname:
+                if purge_in_fallback:
+                    del self[asset]
+                else:
+                    self.fallback[asset] = self.pop(asset)
+                    # TODO: Does purge_doc need to do something different if fallback already has that asset?
+                    #       If the docname was deleted (vs just being refreshed) then we'll need to drop this here.
+
+    def merge_other(self, docnames, other):
+        """
+        For use during the env-merge-info sphinx event
+
+        This makes a (potentially dangerous) assumption:
+            if other has it, then it's probably newer, so overwrite anything in this one.
+            Therefore, the last other merged wins, even though the order of merging is indeterminate.
+
+        :param list docnames: Only include asset instances in these docnames
+        :param AssetsMetadataDict other: the AssetsMetadataDict that should merge into this one
+        """
+        for asset in other.defs:
+            if asset[1].docname in docnames:
+                self.defs[asset] = other.defs[asset]
+        for asset in other.refs:
+            if asset[1].docname in docnames:
+                self.refs[asset] = other.refs[asset]
+        if other.fallback:
+            for asset in other.fallback:
+                if asset[1].docname in docnames:
+                    self[asset] = other[asset]
+
+    def update_or_init_from_assets(self, assets, default_value=None):
+        """
+        This uses assets to generate the keys for this dict.
+        If there are entries in fallback, use those first, then use default_value.
+
+        If default_value is callable, it will be called each time its used.
+        This allows for instantiating a class as each value of the dictionary.
+
+        :param AssetsDict assets: The assets that will initialize the assets_status
+        :param default_value: The default value to use when initializing each entry (eg AssetStatus)
+        """
+        def default():
+            if callable(default_value):
+                return default_value()
+            else:
+                return default_value
+
+        # Don't overwrite any pre-existing status
+        for asset in assets.list_definitions():
+            self.defs.setdefault(asset, self.fallback.pop(asset, default()))
+        for asset in assets.list_references():
+            self.refs.setdefault(asset, self.fallback.pop(asset, default()))
+        if self.fallback:
+            # There shouldn't be anything else in fallback at this point unless merging...
+            # This logic might be pointless... TODO: test whether this does anything
+            fallback = self.fallback
+            self.fallback = {}
+            for asset in fallback:
+                self.setdefault(asset, fallback.pop(asset))

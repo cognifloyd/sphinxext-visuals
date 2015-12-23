@@ -25,7 +25,7 @@ from visuals import package_dir
 from visuals.rst.directives import Visual
 from visuals.rst.nodes import visual, visit_visual, depart_visual
 from visuals.rst.processing import add_visual_to_assets
-from visuals.utils.assets import AssetsDict, add_assets_status_to
+from visuals.utils.assets import AssetsDict, AssetsMetadataDict, AssetStatus
 from visuals.utils.sphinx import sphinx_emit, pickle_doctree
 
 __version__ = '0.1'
@@ -35,7 +35,7 @@ def event_builder_inited(app):
     """
     visual assets are externally sourced from some DAM (digital asset manager)
     or are externally generated as would be done through the visuals API.
-    That lead to the following design decisions:
+    That leads to the following design decisions:
 
     This uses app.env.assets* because both app.builder.images and app.env.images:
     - are too widely used throughout sphinx to modify safely
@@ -43,23 +43,26 @@ def event_builder_inited(app):
     - require that the image files exist in the project's source files
     - assume that the image files are relative to the docname that includes them
 
-    This uses AssetsDict instead of FilenameUniqDict because we don't need filenames
-
     Sphinx's image infrastructure also took care of:
     - select alternative image types
     - image translation
     - additional image-related post processing and transforms
     These might need to be replaced in visuals.
 
+    NOTE: If anything needs to be pickled (reused between runs), put it in doctrees or env:
+          doctrees and env get pickled, but builder does not.
+
     :param sphinx.application.Sphinx app: Sphinx Application
     """
 
     # the primary list of all visual assets, extracted from the doctree.
     app.env.assets = AssetsDict()
+    app.env.assets_status = AssetsMetadataDict()
+    # NOTE: before using assets_status, run:
+    #       app.env.assets_status.update_or_init_from_assets(app.env.assets, AssetStatus)
 
     # the final uri or oembed block with info for builder
     app.builder.assets = {}
-    # TODO: Maybe this should be made with a slice from assets_status
 
     # TODO: It might be good to have a Dict that is not per instance, but per asset.
     app.builder.assets_instances = {}
@@ -71,11 +74,16 @@ def event_env_purge_doc(app, docname):
     :param docname: see AssetsDict.purge_doc
     :param sphinx.application.Sphinx app: Sphinx Application
     """
-    app.env.assets.purge_doc(docname)
-    # TODO: purge assets_status
-    #       maybe change DeepChainMap to have purge_doc
-    #       which caches the status in a separate structure until status is reinited
-    #       dropping the cached entry if the doc no longer exists.
+    env = app.env
+    """:type env: sphinx.environment.BuildEnvironment"""
+
+    env.assets.purge_doc(docname)
+    if docname in env.found_docs:
+        # assets_status will cache the doc in assets_status.fallback
+        env.assets_status.purge_doc(docname)
+    else:
+        # the docname was probably deleted, so really ignore it.
+        env.assets_status.purge_doc(docname, purge_in_fallback=True)
 
 
 def event_visual_node_generated(app, visual_node):
@@ -98,19 +106,24 @@ def event_doctree_read(app, doctree):
     :param sphinx.application.Sphinx app: Sphinx Application
     :param nodes.document doctree: The doctree of a particular docname in the project
     """
+    assets = app.env.assets
+    """:type assets: AssetsDict"""
+    assets_status = app.env.assets_status
+    """:type assets_status: AssetsMetadataDict"""
+
     for visual_node in doctree.traverse(visual):
-        add_visual_to_assets(app.env.assets, visual_node)
+        add_visual_to_assets(assets, visual_node)
 
 
 def event_env_merge_info(app, docnames, other):
     """
     This triggers the assets merge in the environment
     :param sphinx.application.Sphinx app: Sphinx Application
-    :param docnames: see AssetsDict.merge_other
-    :param other: see AssetsDict.merge_other
+    :param list docnames: Only include asset instances in these docnames
+    :param sphinx.environment.BuildEnvironment other: The other Sphinx Environment to be merged
     """
-    app.env.assets.merge_other(docnames, other)
-    # TODO: Merge assets_status
+    app.env.assets.merge_other(docnames, other.assets)
+    app.env.assets_status.merge_other(docnames, other.assets_status)
 
 
 def event_env_updated(app, env):
@@ -142,8 +155,10 @@ def event_before_doctree_extra_processing(app, env):
     """
     assets = env.assets
     """:type assets: AssetsDict"""
+    assets_status = env.assets_status
+    """:type assets_status: AssetsMetadataDict"""
 
-    add_assets_status_to(env, assets)
+    assets_status.update_or_init_from_assets(assets, AssetStatus)
 
 
 def event_doctree_extra_processing(app, env, docname, doctree):
