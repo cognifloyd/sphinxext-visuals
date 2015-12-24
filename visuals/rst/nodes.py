@@ -55,6 +55,7 @@ def visit_visual(self, node):
     :param nodes.NodeVisitor self:
     :param visual node:
     """
+    # TODO:2 insert oEmbed or downloaded asset or placeholder
     # client = VisualsClient()
     # node['uri'] = client.geturi(node)
     # the client could modify node['type'] here, right?

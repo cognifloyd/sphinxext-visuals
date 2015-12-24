@@ -75,7 +75,7 @@ class Visual(Figure):
         self.emit('visual-caption-and-legend-extracted', self, visual_node, caption, legend)
 
         if visual_node['type'] == 'photo':
-            # TODO: Temp image processing here
+            # TODO:2 Temp image processing here
             uri = self.get_temp_image_uri()
             self.run_figure_or_image_with_uri(uri, visual_node, caption, legend)
             # Replacing image node is not a good option, but we could manipulate uri.
@@ -167,7 +167,7 @@ class Visual(Figure):
 
         return legend, visual_content
 
-    # TODO: Temp image processing here
+    # TODO:2 Temp image processing here
     def get_temp_image_uri(self):
         return self.app.config.visuals_local_temp_image
 

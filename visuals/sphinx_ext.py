@@ -24,7 +24,8 @@ from sphinx.util.osutil import ensuredir
 from visuals import package_dir
 from visuals.rst.directives import Visual
 from visuals.rst.nodes import visual, visit_visual, depart_visual
-from visuals.rst.processing import add_visual_to_assets
+from visuals.rst.processing import add_visual_to_assets, fix_types_on_visual_references, process_visuals, \
+    request_asset_metadata, VisualNodeDataHandler
 from visuals.utils.assets import AssetsDict, AssetsMetadataDict, AssetStatus
 from visuals.utils.sphinx import sphinx_emit, pickle_doctree
 
@@ -56,10 +57,12 @@ def event_builder_inited(app):
     """
 
     # the primary list of all visual assets, extracted from the doctree.
-    app.env.assets = AssetsDict()
-    app.env.assets_status = AssetsMetadataDict()
+    assets = app.env.assets = AssetsDict()
+    assets_status = app.env.assets_status = AssetsMetadataDict()
     # NOTE: before using assets_status, run:
     #       app.env.assets_status.update_or_init_from_assets(app.env.assets, AssetStatus)
+
+    VisualNodeDataHandler.class_init(assets, assets_status)
 
     # the final uri or oembed block with info for builder
     app.builder.assets = {}
@@ -111,8 +114,20 @@ def event_doctree_read(app, doctree):
     assets_status = app.env.assets_status
     """:type assets_status: AssetsMetadataDict"""
 
+    def_nodes = []
     for visual_node in doctree.traverse(visual):
+        """:type visual_node: visual"""
         add_visual_to_assets(assets, visual_node)
+
+        if not visual_node.is_ref():
+            def_nodes.append(visual_node)
+
+        node_data = VisualNodeDataHandler(visual_node)
+        node_metadata = node_data.get_metadata()
+
+    metadata = []
+    metadata.extend(request_asset_metadata(def_nodes))
+    # TODO:1 Request asset def metadata (GET w/ content hash & PUT content)
 
 
 def event_env_merge_info(app, docnames, other):
@@ -136,13 +151,23 @@ def event_env_updated(app, env):
     :param sphinx.environment.BuildEnvironment env: Sphinx Environment
     """
     sphinx_emit(app, 'before-doctree-extra-processing', app, env)
+
+    # TODO:PARALLEL add parallel processing with ParallelTasks or see sphinx.builders.linkcheck
+    # from sphinx.util.parallel import ParallelTasks, parallel_available
+    # if parallel_available and app.parallel > 1:  # based on sphinx.environment #598
+    #   nproc = app.parallel
+    #
+    # env.asset_tasks = ParallelTasks(nproc)
+
     for docname in env.all_docs:
-        # TODO: Parallel processing
         doctree = env.get_doctree(docname)
         # Return True if the doctree needs to be re-pickled.
         re_pickle = sphinx_emit(app, 'doctree-extra-processing', app, env, docname, doctree)
         if True in re_pickle:
             pickle_doctree(env, docname, doctree)
+
+    # merge parallel:
+    # env.asset_tasks.join()
 
     sphinx_emit(app, 'before-pickle-env', app, env)
 
@@ -175,6 +200,13 @@ def event_doctree_extra_processing(app, env, docname, doctree):
     :param nodes.document doctree: The doctree of a particular docname in the project
     :return boolean: True if doctree needs to be re-pickled.
     """
+    assets = env.assets
+    """:type assets: AssetsDict"""
+
+    fix_types_on_visual_references(doctree, assets)
+
+    # TODO:1 Request visual metadata for ref & def
+    process_visuals(app, doctree)
     return False
 
 
@@ -184,6 +216,8 @@ def event_before_pickle_env(app, env):
     :param sphinx.application.Sphinx app: Sphinx Application
     :param sphinx.environment.BuildEnvironment env: Sphinx Environment
     """
+    # TODO:2 Transfer metadata env => builder (pickled in env, not in builder)
+    pass
 
 
 def event_doctree_resolved(app, doctree, docname):
@@ -196,9 +230,10 @@ def event_doctree_resolved(app, doctree, docname):
     :param nodes.document doctree: The doctree of all docs in the project
     :param str docname: the path/filename relative to project (without extension)
     """
+    # TODO:2 Retrieve oEmbed or Download Asset or Mark for placeholder
     # for node in doctree.traverse(visual):
     #     visual['placeholder'] = True
-    # pass
+    pass
 
 
 def monkey_patch_builder_finish(app):
@@ -236,10 +271,25 @@ def monkey_patch_builder_finish(app):
             """
             :param sphinx.builders.Builder self:
             """
+            # TODO:2 Make sure monkey patch worked
             super().finish()
             self.finish_tasks.add_task(copy_visual_placeholder)
 
         builder.finish = finish
+
+
+def event_build_finished(app, exception):
+    """
+    Do any necessary cleanup, such as cleaning up downloads
+
+    Or handle any raised exceptions (including cleanup due to exception)
+
+    :param sphinx.application.Sphinx app: Sphinx Application
+    :param None|Exception exception:
+    :return:
+    """
+    # TODO: Cleanup and/or handle exceptions
+    pass
 
 
 def setup(app):
@@ -271,6 +321,7 @@ def setup(app):
 
     # Phase 1: Reading
     #   Sphinx start reading
+    # app.connect('env-get-outdated', event_env_get_outdated)
     app.connect('env-purge-doc', event_env_purge_doc)
     #   docutils transforms (per docname)
     # app.add_transform(Transform)
@@ -302,5 +353,8 @@ def setup(app):
     #   which, as a hack, is logically separate from event_builder_inited
     app.connect('builder-inited', monkey_patch_builder_finish)
 
-    # TODO: Make sure that everything really is parallel safe (parallel is important!)
+    #   cleanup / handle exceptions
+    app.connect('build-finished', event_build_finished)
+
+    # TODO:PARALLEL Make sure that everything really is parallel safe (parallel is important!)
     return {'version': __version__, 'parallel_read_safe': True}
