@@ -13,6 +13,8 @@ from __future__ import absolute_import
 
 from docutils import nodes
 
+from visuals.asset.visual_asset_bridge import VisualAsset
+
 
 # noinspection PyPep8Naming
 class visual(nodes.General, nodes.Element):
@@ -56,14 +58,11 @@ def visit_visual(self, node):
     :param visual node:
     """
     # TODO:2 insert oEmbed or downloaded asset or placeholder
-    # client = VisualsClient()
-    # node['uri'] = client.geturi(node)
-    # the client could modify node['type'] here, right?
+    sm = node.assets_statemachine
+    """:type sm: AssetsStateMachine"""
 
-    if node['placeholder']:
-        for image in node.traverse(nodes.image):
-            image['uri'] = 'placeholder uri'
-    pass
+    asset = VisualAsset(node)
+    oembed = sm.get_oembed(asset)
 
 
 def depart_visual(self, node):

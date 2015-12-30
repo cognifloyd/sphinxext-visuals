@@ -14,6 +14,7 @@
 """
 
 from __future__ import absolute_import
+
 from os import path
 
 from docutils import nodes
@@ -22,11 +23,12 @@ from sphinx.util import copy_static_entry
 from sphinx.util.osutil import ensuredir
 
 from visuals import package_dir
+from visuals.asset import AssetsDict, AssetsMetadataDict
+from visuals.asset.statemachine import AssetsStateMachine, AssetState
+from visuals.asset.visual_asset_bridge import VisualAsset
+from visuals.rst import fix_types_on_visual_references
 from visuals.rst.directives import Visual
 from visuals.rst.nodes import visual, visit_visual, depart_visual
-from visuals.rst.processing import add_visual_to_assets, fix_types_on_visual_references, process_visuals, \
-    request_asset_metadata, VisualNodeDataHandler
-from visuals.utils.assets import AssetsDict, AssetsMetadataDict, AssetStatus
 from visuals.utils.sphinx import sphinx_emit, pickle_doctree
 
 __version__ = '0.1'
@@ -58,11 +60,14 @@ def event_builder_inited(app):
 
     # the primary list of all visual assets, extracted from the doctree.
     assets = app.env.assets = AssetsDict()
-    assets_status = app.env.assets_status = AssetsMetadataDict()
-    # NOTE: before using assets_status, run:
-    #       app.env.assets_status.update_or_init_from_assets(app.env.assets, AssetStatus)
+    assets_state = app.env.assets_state = AssetsMetadataDict()
+    # NOTE: before using assets_state, run:
+    #       app.env.assets_state.update_or_init_from_assets(app.env.assets, AssetState)
 
-    VisualNodeDataHandler.class_init(assets, assets_status)
+    # Homegrown Dependency Injection :)
+    VisualAsset.class_init(assets, assets_state)
+
+    app.assets_statemachine = AssetsStateMachine()
 
     # the final uri or oembed block with info for builder
     app.builder.assets = {}
@@ -81,12 +86,7 @@ def event_env_purge_doc(app, docname):
     """:type env: sphinx.environment.BuildEnvironment"""
 
     env.assets.purge_doc(docname)
-    if docname in env.found_docs:
-        # assets_status will cache the doc in assets_status.fallback
-        env.assets_status.purge_doc(docname)
-    else:
-        # the docname was probably deleted, so really ignore it.
-        env.assets_status.purge_doc(docname, purge_in_fallback=True)
+    env.assets_state.purge_doc(docname)
 
 
 def event_visual_node_generated(app, visual_node):
@@ -109,25 +109,19 @@ def event_doctree_read(app, doctree):
     :param sphinx.application.Sphinx app: Sphinx Application
     :param nodes.document doctree: The doctree of a particular docname in the project
     """
-    assets = app.env.assets
-    """:type assets: AssetsDict"""
-    assets_status = app.env.assets_status
-    """:type assets_status: AssetsMetadataDict"""
+    sm = app.assets_statemachine
+    """:type sm: AssetsStateMachine"""
 
-    def_nodes = []
+    definitions = []
     for visual_node in doctree.traverse(visual):
         """:type visual_node: visual"""
-        add_visual_to_assets(assets, visual_node)
 
-        if not visual_node.is_ref():
-            def_nodes.append(visual_node)
+        asset = VisualAsset(visual_node)
 
-        node_data = VisualNodeDataHandler(visual_node)
-        node_metadata = node_data.get_metadata()
+        if not asset.is_ref:
+            definitions.append(asset)
 
-    metadata = []
-    metadata.extend(request_asset_metadata(def_nodes))
-    # TODO:1 Request asset def metadata (GET w/ content hash & PUT content)
+    sm.request_asset_generation(definitions)
 
 
 def event_env_merge_info(app, docnames, other):
@@ -138,7 +132,7 @@ def event_env_merge_info(app, docnames, other):
     :param sphinx.environment.BuildEnvironment other: The other Sphinx Environment to be merged
     """
     app.env.assets.merge_other(docnames, other.assets)
-    app.env.assets_status.merge_other(docnames, other.assets_status)
+    app.env.assets_state.merge_other(docnames, other.assets_state)
 
 
 def event_env_updated(app, env):
@@ -174,16 +168,16 @@ def event_env_updated(app, env):
 
 def event_before_doctree_extra_processing(app, env):
     """
-    Adds the asset status tracking dicts
+    Adds the asset state tracking dicts
     :param sphinx.application.Sphinx app: Sphinx Application
     :param sphinx.environment.BuildEnvironment env: Sphinx Environment
     """
     assets = env.assets
     """:type assets: AssetsDict"""
-    assets_status = env.assets_status
-    """:type assets_status: AssetsMetadataDict"""
+    assets_state = env.assets_state
+    """:type assets_state: AssetsMetadataDict"""
 
-    assets_status.update_or_init_from_assets(assets, AssetStatus)
+    assets_state.update_or_init_from_assets(assets, AssetState)
 
 
 def event_doctree_extra_processing(app, env, docname, doctree):
@@ -200,14 +194,22 @@ def event_doctree_extra_processing(app, env, docname, doctree):
     :param nodes.document doctree: The doctree of a particular docname in the project
     :return boolean: True if doctree needs to be re-pickled.
     """
-    assets = env.assets
-    """:type assets: AssetsDict"""
+    sm = app.assets_statemachine
+    """:type sm: AssetsStateMachine"""
 
-    fix_types_on_visual_references(doctree, assets)
+    fix_types_on_visual_references(doctree, env.assets)
 
-    # TODO:1 Request visual metadata for ref & def
-    process_visuals(app, doctree)
-    return False
+    # TODO: Perhaps, if is_ref and definition is available, then mark dependency to def file in env.dependencies
+    # mark_dependencies_for_visual_references(doctree, env)
+
+    assets = []
+    for visual_node in doctree.traverse(visual):
+        """:type visual_node: visual"""
+
+        asset = VisualAsset(visual_node)
+        assets.append(asset)
+
+    sm.ensure_available(assets)
 
 
 def event_before_pickle_env(app, env):
@@ -216,7 +218,7 @@ def event_before_pickle_env(app, env):
     :param sphinx.application.Sphinx app: Sphinx Application
     :param sphinx.environment.BuildEnvironment env: Sphinx Environment
     """
-    # TODO:2 Transfer metadata env => builder (pickled in env, not in builder)
+    # TODO:1 Transfer metadata env => builder (pickled in env, not in builder)
     pass
 
 
@@ -230,10 +232,21 @@ def event_doctree_resolved(app, doctree, docname):
     :param nodes.document doctree: The doctree of all docs in the project
     :param str docname: the path/filename relative to project (without extension)
     """
-    # TODO:2 Retrieve oEmbed or Download Asset or Mark for placeholder
-    # for node in doctree.traverse(visual):
-    #     visual['placeholder'] = True
-    pass
+    sm = app.assets_statemachine
+    """:type sm: AssetsStateMachine"""
+
+    assets = []
+    for visual_node in doctree.traverse(visual):
+        """:type visual_node: visual"""
+
+        asset = VisualAsset(visual_node)
+        assets.append(asset)
+
+        # Make the sm available in the visitors
+        visual_node.assets_statemachine = sm
+
+    sm.retrieve_oembed_or_download(assets)
+    sm.mark_for_placeholder_on_unavailable(assets)
 
 
 def monkey_patch_builder_finish(app):
@@ -250,6 +263,9 @@ def monkey_patch_builder_finish(app):
 
     # Only monkey patch if the builder supports images
     if builder.supported_image_types:
+
+        patch_target = builder.__class__
+        original_finish = patch_target.finish
 
         def copy_visual_placeholder(self):
             """
@@ -271,11 +287,10 @@ def monkey_patch_builder_finish(app):
             """
             :param sphinx.builders.Builder self:
             """
-            # TODO:2 Make sure monkey patch worked
-            super().finish()
+            original_finish(self)
             self.finish_tasks.add_task(copy_visual_placeholder)
 
-        builder.finish = finish
+        patch_target.finish = finish
 
 
 def event_build_finished(app, exception):
@@ -352,6 +367,7 @@ def setup(app):
     #   builder-inited event used here to influence Phase 4's finish tasks.
     #   which, as a hack, is logically separate from event_builder_inited
     app.connect('builder-inited', monkey_patch_builder_finish)
+    # TODO: This might be able to go in build-finished...
 
     #   cleanup / handle exceptions
     app.connect('build-finished', event_build_finished)
