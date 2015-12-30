@@ -109,7 +109,7 @@ class AssetsDict(dict):
                 for options in instances[doc]:
                     self.add_asset(doc, asset_id, options, asset_type)
 
-    def list_instances(self, docnames=None):
+    def iter_instances(self, docnames=None):
         """
         This returns a list of either all or a filtered set of asset instances.
         If docnames is provided, only the docnames in that list will be included.
@@ -121,35 +121,28 @@ class AssetsDict(dict):
         :param list docnames: Only include asset instances in these docnames
         :return list: list of all asset instances (definitions & references)
         """
-        instance_list = []
         for asset_id, (asset_type, location, instances) in list(self.items()):
             for docname in list(instances.keys()):
                 if docnames is not None and docname not in docnames:
                     continue
                 for index in range(len(instances[docname])):
-                    instance_list.append((asset_id, AssetLocation(docname, index)))
-        # TODO: Make this a generator instead
-        return instance_list
+                    yield (asset_id, AssetLocation(docname, index))
 
-    def list_definitions(self, docnames=None):
+    def iter_definitions(self, docnames=None):
         """
         :param list docnames: Only include asset instances in these docnames
         :return list: list of all asset definitions
         """
-        def_list = []
         for asset_id, (asset_type, location, instances) in list(self.items()):
             if location is None or docnames is not None and location.docname not in docnames:
                 continue
-            def_list.append((asset_id, location))
-        # TODO: Make this a generator instead
-        return def_list
+            yield (asset_id, location)
 
-    def list_references(self, docnames=None):
+    def iter_references(self, docnames=None):
         """
         :param list docnames: Only include asset instances in these docnames
         :return list: list of all asset references
         """
-        ref_list = []
         for asset_id, (asset_type, location, instances) in list(self.items()):
             for docname in list(instances.keys()):
                 if docnames is not None and docname not in docnames:
@@ -157,9 +150,16 @@ class AssetsDict(dict):
                 for index in range(len(instances[docname])):
                     instance_location = AssetLocation(docname, index)
                     if instance_location is not location:
-                        ref_list.append((asset_id, AssetLocation(docname, index)))
-        # TODO: Make this a generator instead
-        return ref_list
+                        yield (asset_id, AssetLocation(docname, index))
+
+    def list_instances(self, docnames=None):
+        return list(self.iter_instances(docnames))
+
+    def list_definitions(self, docnames=None):
+        return list(self.iter_definitions(docnames))
+
+    def list_references(self, docnames=None):
+        return list(self.iter_references(docnames))
 
     def get_type(self, asset_id):
         return self[asset_id].type
@@ -242,9 +242,9 @@ class AssetsMetadataDict(DeepChainMapWithFallback):
                 return default_value
 
         # Don't overwrite any pre-existing state
-        for asset in assets.list_definitions():
+        for asset in assets.iter_definitions():
             self.defs.setdefault(asset, self.fallback.pop(asset, default()))
-        for asset in assets.list_references():
+        for asset in assets.iter_references():
             self.refs.setdefault(asset, self.fallback.pop(asset, default()))
         if self.fallback:
             # There shouldn't be anything else in fallback at this point unless merging...
