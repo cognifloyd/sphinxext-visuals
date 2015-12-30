@@ -41,14 +41,12 @@ class AssetsStateMachine(object):
         self.backends = []
         """Ordered list of backend instances"""
 
-        # TODO:1 Select Adapter based on voting or something, w/ different backend per type
-        possible_backends = AssetBackend.__subclasses__()
-        backends = []
-        for backend in possible_backends:
-            if backend.is_enabled(self.backends_config.get(backend.name, {})):
-                backends.append(
-                        (backend.priority, backend)
-                )
+        backends = [
+            (backend.priority, backend)
+            # TODO: Make sure that the subclasses are already imported
+            for backend in AssetBackend.__subclasses__()  # Only supports one level of subclasses
+            if backend.is_enabled(self.backends_config.get(backend.name, {}))
+            ]
 
         backends.sort(key=lambda b: b[0])
 
@@ -56,24 +54,24 @@ class AssetsStateMachine(object):
             self.backends.append(backend(self))
 
     def request_asset_generation(self, asset_defs):
-        not_requested = []
-        for asset in asset_defs:
-            if asset.state.requested is False:
-                not_requested.append(asset)
-
         # This should make requests (GET w/ content hash & PUT w/ content)
         for backend in self.backends:
+            not_requested = [asset for asset in list(asset_defs) if not asset.state.requested]
+            # Each backend should mark each asset as requested, if it can handle the asset.
+            # The next backend will request any of the remainder.
+            # TODO: more robust backend selection per asset (by type or through config)
             backend.request_generation(not_requested)
             backend.check_availability(asset_defs)
 
     def ensure_available(self, assets):
-        not_available = []
-        for asset in assets:
-            if not asset.state.available:
-                not_available.append(asset)
-
         for backend in self.backends:
-            backend.check_availability(asset)
+            not_available = []
+            for asset in list(assets):
+                """:type asset: visuals.asset.visual_asset_bridge.VisualAsset"""
+                """:type asset.state: AssetState"""
+                if not asset.state.available or (asset.state.available and asset.state.placeholder):
+                    not_available.append(asset)
+            backend.check_availability(not_available)
 
     def retrieve_oembed_or_download(self, assets):
         for asset in assets:
