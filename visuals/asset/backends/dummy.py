@@ -51,8 +51,17 @@ dummy_assets = {
 
 class DummyBackend(AssetBackend):
 
-    def __init__(self, assets_statemachine):
-        super().__init__(assets_statemachine)
+    config = {'silly': 'default options'}
+    name = 'dummy'
+    priority = 50
+
+    @classmethod
+    def is_enabled(cls, config):
+        cls.apply_config(config)
+        return True
+
+    def __init__(self, statemachine):
+        super().__init__(statemachine)
         self.assets = dummy_assets
 
     def _random_asset_key(self):
@@ -66,11 +75,11 @@ class DummyBackend(AssetBackend):
     #     asset.content         # only if hash unrecognized
 
     def request_generation(self, assets):
-        self.assets_statemachine.mark_requested(assets)
+        self.statemachine.mark_requested(assets)
 
     def check_availability(self, assets):
         for asset in list(assets):
             remote_asset = self.assets[self._random_asset_key()]
             if remote_asset['status'] == 'done':
-                self.assets_statemachine.mark_available(asset)
+                self.statemachine.mark_available(asset)
 

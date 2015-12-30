@@ -191,7 +191,7 @@ class AssetsMetadataDict(DeepChainMapWithFallback):
         for asset in self:  # does not iterate through fallback
             if asset[1].docname == docname:
                 del self[asset]
-                # TODO: Make this more robust, caching asset state entries for latter use.
+                # TODO: Make this more robust, caching asset state entries for later use.
                 #       The following was one attempt, but it did not take into account a reorganized or deleted doc
                 #       If reorganized: instance numbers might change.
                 #       If deleted: it doesn't make sense to save it any more.

@@ -21,15 +21,40 @@ class AssetBackend(object):
 
     This provides the interface that each AssetBackend must implement.
     """
+    config = {}
+    """Sane default config for the backend (override if needed)."""
+    name = 'not-implemented'
+    """Simple string name for the backend (override)."""
+    priority = None
+    """Numerical priority of this backend, 0 through 999 (override)."""
 
-    def __init__(self, assets_statemachine):
+    def __init__(self, statemachine):
         """
-        :param visuals.assets.statemachine.AssetsStateMachine assets_statemachine:
+        :param visuals.assets.statemachine.AssetsStateMachine statemachine:
         """
-        self.assets_statemachine = assets_statemachine
+        self.statemachine = statemachine
 
     def request_generation(self, assets):
         raise NotImplementedError('must be implemented in subclasses')
 
     def check_availability(self, assets):
         raise NotImplementedError('must be implemented in subclasses')
+
+    @classmethod
+    def is_enabled(cls, config):
+        """
+        This should indicate whether or not the backend can be used.
+        This can be used to check config or make sure that the backend is available,
+        reachable, or whatever.
+        :param dict config: dictionary of config options for this backend.
+        :return: bool
+        """
+        # subclasses should only apply_config if is_enabled will return True
+        # cls.apply_config(config)
+        return False
+
+    @classmethod
+    def apply_config(cls, config):
+        if 'priority' in config:
+            cls.priority = config.pop('priority')
+        cls.config.update(config)

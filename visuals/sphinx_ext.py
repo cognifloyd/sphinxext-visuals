@@ -66,6 +66,7 @@ def event_builder_inited(app):
 
     # Homegrown Dependency Injection :)
     VisualAsset.class_init(assets, assets_state)
+    AssetsStateMachine.backends_config = app.config.visuals_asset_backends
 
     app.assets_statemachine = AssetsStateMachine()
 
@@ -315,6 +316,11 @@ def setup(app):
     #   sphinx init
     app.connect('builder-inited', event_builder_inited)
     app.add_config_value('visuals_local_temp_image', 'http://example.com/placeholder-uri', 'env')
+    default_asset_backends_config = {
+        'placeholder': {},
+        'visuals': {}
+    }
+    app.add_config_value('visuals_asset_backends', default_asset_backends_config, 'env')
 
     # Phase 1: Reading
     #   docutils parsing (and writer visitors for Phase 4)

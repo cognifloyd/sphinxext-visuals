@@ -10,8 +10,6 @@
 """
 from visuals.asset.backends import AssetBackend
 
-from visuals.asset.backends.dummy import DummyBackend
-
 
 class AssetState(object):
     """
@@ -35,14 +33,27 @@ class AssetsStateMachine(object):
     A state machine for multiple assets.
     It manages the states of a list of assets, tracking state in AssetState objects.
     """
+
+    backends_config = {}
+    """backends_config should be injected by the consumer of this object, if available."""
+
     def __init__(self):
+        self.backends = []
+        """Ordered list of backend instances"""
+
         # TODO:1 Select Adapter based on voting or something, w/ different backend per type
         possible_backends = AssetBackend.__subclasses__()
+        backends = []
         for backend in possible_backends:
-            pass
+            if backend.is_enabled(self.backends_config.get(backend.name, {})):
+                backends.append(
+                        (backend.priority, backend)
+                )
 
-        self.default_backend = DummyBackend
-        self.backend = self.default_backend(self)
+        backends.sort(key=lambda b: b[0])
+
+        for priority, backend in backends:
+            self.backends.append(backend(self))
 
     def request_asset_generation(self, asset_defs):
         not_requested = []
@@ -51,8 +62,9 @@ class AssetsStateMachine(object):
                 not_requested.append(asset)
 
         # This should make requests (GET w/ content hash & PUT w/ content)
-        self.backend.request_generation(not_requested)
-        self.backend.check_availability(asset_defs)
+        for backend in self.backends:
+            backend.request_generation(not_requested)
+            backend.check_availability(asset_defs)
 
     def ensure_available(self, assets):
         not_available = []
@@ -60,7 +72,8 @@ class AssetsStateMachine(object):
             if not asset.state.available:
                 not_available.append(asset)
 
-        self.backend.check_availability(asset)
+        for backend in self.backends:
+            backend.check_availability(asset)
 
     def retrieve_oembed_or_download(self, assets):
         for asset in assets:
