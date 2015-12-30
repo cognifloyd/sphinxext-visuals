@@ -73,7 +73,7 @@ def event_builder_inited(app):
     # the final uri or oembed block with info for builder
     app.builder.assets = {}
 
-    # TODO: It might be good to have a Dict that is not per instance, but per asset.
+    # TODO:2 It might be good to have a Dict that is not per instance, but per asset.
     app.builder.assets_instances = {}
 
 
@@ -315,7 +315,7 @@ def setup(app):
     # Phase 0: Initialization
     #   sphinx init
     app.connect('builder-inited', event_builder_inited)
-    app.add_config_value('visuals_local_temp_image', 'http://example.com/placeholder-uri', 'env')
+    app.add_config_value('temp_image_uri', 'cpip://rfc/1149', '')
     default_asset_backends_config = {
         'placeholder': {},
         'visuals': {}

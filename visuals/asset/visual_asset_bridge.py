@@ -39,7 +39,6 @@ class AssetOptionsDict(dict):
 
     def __init__(self, options):
         assert isinstance(options, dict)
-        # TODO: Can this support an iterable too?
         filtered = set(options.keys()) - set(self.filtered_keys)
         options_filtered = options.copy()
         for filtered_key in filtered:
