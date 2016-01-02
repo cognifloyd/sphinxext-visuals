@@ -27,18 +27,14 @@ class AssetBackend(object):
     """Simple string name for the backend (override)."""
     priority = None
     """Numerical priority of this backend, 0 through 999 (override)."""
+    enabled_by_default = False
+    """Whether or not the class will be enabled by default, without per project config"""
 
     def __init__(self, statemachine):
         """
-        :param visuals.assets.statemachine.AssetsStateMachine statemachine:
+        :param visuals.asset.statemachine.AssetsStateMachine statemachine:
         """
         self.statemachine = statemachine
-
-    def request_generation(self, assets):
-        raise NotImplementedError('must be implemented in subclasses')
-
-    def check_availability(self, assets):
-        raise NotImplementedError('must be implemented in subclasses')
 
     @classmethod
     def is_enabled(cls, config):
@@ -49,12 +45,20 @@ class AssetBackend(object):
         :param dict config: dictionary of config options for this backend.
         :return: bool
         """
-        # subclasses should only apply_config if is_enabled will return True
-        # cls.apply_config(config)
-        return False
+        if ('enabled' in config and config['enabled']) or cls.enabled_by_default:
+            cls.apply_config(config)
+            return True
+        else:
+            return False
 
     @classmethod
     def apply_config(cls, config):
         if 'priority' in config:
             cls.priority = config.pop('priority')
         cls.config.update(config)
+
+    def request_generation(self, assets):
+        raise NotImplementedError('must be implemented in subclasses')
+
+    def check_availability(self, assets):
+        raise NotImplementedError('must be implemented in subclasses')

@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """
-    visuals.assets.statemachine
-    ~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    visuals.asset.statemachine
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~
 
     Asset processing logic
 
@@ -84,11 +84,7 @@ class AssetsStateMachine(object):
         pass
 
     def mark_for_placeholder_on_unavailable(self, assets):
-        needs_placeholder = []
-        for asset in assets:
-            if not asset.state.available:
-                needs_placeholder.append(asset)
-
+        needs_placeholder = [asset for asset in list(assets) if not asset.state.available]
         self.placeholder_needed(needs_placeholder)
 
     @staticmethod

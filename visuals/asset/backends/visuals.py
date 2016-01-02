@@ -9,8 +9,9 @@
     :license: BSD, see LICENSE for details.
 """
 
+from visuals.asset.backends import AssetBackend
 from visuals.asset.visual_asset_bridge import VisualAsset
-# from visuals.client import VisualsClient
+from visuals.client import VisualsClient
 from visuals.rst import visual
 
 
@@ -54,3 +55,23 @@ def process_visuals(app, doctree):
 
         if response.uri:
             asset.state.available = True
+
+
+class VisualsBackend(AssetBackend):
+    name = 'visuals'
+    priority = 500
+    enabled_by_default = True
+    config = {}
+
+    def __init__(self, statemachine):
+        super().__init__(statemachine)
+        self.client = VisualsClient()
+
+    def request_generation(self, assets):
+        response = self.client.request(assets)
+        self.statemachine.mark_requested(assets)
+
+    def check_availability(self, assets):
+        response = self.client.check_availability(assets)
+        self.statemachine.mark_available(assets)
+

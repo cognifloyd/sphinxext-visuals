@@ -248,6 +248,9 @@ def event_doctree_resolved(app, doctree, docname):
 
     sm.retrieve_oembed_or_download(assets)
     sm.mark_for_placeholder_on_unavailable(assets)
+    # for placeholders:
+    sm.request_asset_generation(assets)
+    sm.check_availability(assets)
 
 
 def monkey_patch_builder_finish(app):
@@ -317,8 +320,9 @@ def setup(app):
     app.connect('builder-inited', event_builder_inited)
     app.add_config_value('temp_image_uri', 'cpip://rfc/1149', '')
     default_asset_backends_config = {
+        'visuals': {},
         'placeholder': {},
-        'visuals': {}
+        'dummy': {'enabled': True}
     }
     app.add_config_value('visuals_asset_backends', default_asset_backends_config, 'env')
 

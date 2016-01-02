@@ -54,6 +54,7 @@ class DummyBackend(AssetBackend):
     config = {'silly': 'default options'}
     name = 'dummy'
     priority = 50
+    enabled_by_default = False
 
     @classmethod
     def is_enabled(cls, config):
